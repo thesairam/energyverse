@@ -77,6 +77,7 @@ export type FinanceItem = {
   value: string
   move: string
   trend: 'up' | 'down' | 'flat'
+  history?: number[]
 }
 
 export type CommunityItem = {
@@ -352,9 +353,27 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
     finance: [
-      { metric: 'Invesco Solar ETF (TAN)', value: '$47.12', move: '+1.6%', trend: 'up' },
-      { metric: 'First Solar (FSLR)', value: '$186.24', move: '-0.4%', trend: 'down' },
-      { metric: 'Module ASP Basket', value: '$0.142/W', move: '-2.1%', trend: 'down' },
+      {
+        metric: 'Invesco Solar ETF (TAN)',
+        value: '$47.12',
+        move: '+1.6%',
+        trend: 'up',
+        history: [46.3, 46.8, 47.0, 46.5, 46.9, 47.1, 47.3, 47.12],
+      },
+      {
+        metric: 'First Solar (FSLR)',
+        value: '$186.24',
+        move: '-0.4%',
+        trend: 'down',
+        history: [188.1, 187.7, 187.3, 186.9, 186.4, 186.0, 186.4, 186.24],
+      },
+      {
+        metric: 'Module ASP Basket',
+        value: '$0.142/W',
+        move: '-2.1%',
+        trend: 'down',
+        history: [0.151, 0.149, 0.147, 0.146, 0.144, 0.143, 0.142, 0.142],
+      },
     ],
     youtubeLive: [
       {
@@ -445,9 +464,27 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
     finance: [
-      { metric: 'Global Wind Developers Index', value: '1,248', move: '+0.9%', trend: 'up' },
-      { metric: 'Vestas (VWS.CO)', value: 'DKK 194.2', move: '+1.1%', trend: 'up' },
-      { metric: 'Siemens Energy (ENR.DE)', value: '€26.48', move: '-0.2%', trend: 'down' },
+      {
+        metric: 'Global Wind Developers Index',
+        value: '1,248',
+        move: '+0.9%',
+        trend: 'up',
+        history: [1231, 1236, 1240, 1244, 1246, 1249, 1251, 1248],
+      },
+      {
+        metric: 'Vestas (VWS.CO)',
+        value: 'DKK 194.2',
+        move: '+1.1%',
+        trend: 'up',
+        history: [191.0, 192.1, 193.0, 193.8, 194.6, 194.6, 194.4, 194.2],
+      },
+      {
+        metric: 'Siemens Energy (ENR.DE)',
+        value: '€26.48',
+        move: '-0.2%',
+        trend: 'down',
+        history: [27.1, 26.9, 26.7, 26.5, 26.6, 26.4, 26.5, 26.48],
+      },
     ],
     youtubeLive: [
       {
@@ -538,9 +575,27 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
     finance: [
-      { metric: 'Global Hydro Utility Basket', value: '782', move: '+0.3%', trend: 'up' },
-      { metric: 'Brookfield Renewable (BEP)', value: '$24.61', move: '+0.7%', trend: 'up' },
-      { metric: 'Pumped Storage CAPEX Index', value: '119.4', move: '+1.8%', trend: 'up' },
+      {
+        metric: 'Global Hydro Utility Basket',
+        value: '782',
+        move: '+0.3%',
+        trend: 'up',
+        history: [774, 776, 778, 779, 781, 782, 783, 782],
+      },
+      {
+        metric: 'Brookfield Renewable (BEP)',
+        value: '$24.61',
+        move: '+0.7%',
+        trend: 'up',
+        history: [24.1, 24.2, 24.4, 24.5, 24.6, 24.7, 24.65, 24.61],
+      },
+      {
+        metric: 'Pumped Storage CAPEX Index',
+        value: '119.4',
+        move: '+1.8%',
+        trend: 'up',
+        history: [117.5, 117.9, 118.6, 118.9, 119.2, 119.5, 119.7, 119.4],
+      },
     ],
     youtubeLive: [
       {
@@ -631,9 +686,27 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
     finance: [
-      { metric: 'Geothermal Development Basket', value: '324', move: '+2.1%', trend: 'up' },
-      { metric: 'Ormat Technologies (ORA)', value: '$73.88', move: '+0.6%', trend: 'up' },
-      { metric: 'EGS Private Valuation Index', value: '141', move: '+3.5%', trend: 'up' },
+      {
+        metric: 'Geothermal Development Basket',
+        value: '324',
+        move: '+2.1%',
+        trend: 'up',
+        history: [316, 318, 320, 321, 323, 324, 325, 324],
+      },
+      {
+        metric: 'Ormat Technologies (ORA)',
+        value: '$73.88',
+        move: '+0.6%',
+        trend: 'up',
+        history: [72.4, 72.9, 73.1, 73.3, 73.5, 73.7, 74.0, 73.88],
+      },
+      {
+        metric: 'EGS Private Valuation Index',
+        value: '141',
+        move: '+3.5%',
+        trend: 'up',
+        history: [136, 137, 138, 139, 140, 141, 141.5, 141],
+      },
     ],
     youtubeLive: [
       {
@@ -724,9 +797,27 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
     finance: [
-      { metric: 'Global Lithium Carbonate', value: '$13,540/t', move: '-1.3%', trend: 'down' },
-      { metric: 'Fluence Energy (FLNC)', value: '$20.44', move: '+2.6%', trend: 'up' },
-      { metric: 'Battery Storage Revenue Index', value: '158', move: '+1.9%', trend: 'up' },
+      {
+        metric: 'Global Lithium Carbonate',
+        value: '$13,540/t',
+        move: '-1.3%',
+        trend: 'down',
+        history: [13980, 13860, 13710, 13640, 13590, 13560, 13540, 13540],
+      },
+      {
+        metric: 'Fluence Energy (FLNC)',
+        value: '$20.44',
+        move: '+2.6%',
+        trend: 'up',
+        history: [19.7, 19.9, 20.1, 20.3, 20.5, 20.7, 20.6, 20.44],
+      },
+      {
+        metric: 'Battery Storage Revenue Index',
+        value: '158',
+        move: '+1.9%',
+        trend: 'up',
+        history: [152, 154, 155, 156, 157, 158, 158.5, 158],
+      },
     ],
     youtubeLive: [
       {
@@ -817,9 +908,27 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
     finance: [
-      { metric: 'Cameco (CCJ)', value: '$49.33', move: '+1.0%', trend: 'up' },
-      { metric: 'Uranium Miners ETF (URA)', value: '$31.81', move: '+0.8%', trend: 'up' },
-      { metric: 'U3O8 Spot', value: '$88.00/lb', move: '+0.9%', trend: 'up' },
+      {
+        metric: 'Cameco (CCJ)',
+        value: '$49.33',
+        move: '+1.0%',
+        trend: 'up',
+        history: [48.1, 48.4, 48.7, 49.0, 49.2, 49.4, 49.5, 49.33],
+      },
+      {
+        metric: 'Uranium Miners ETF (URA)',
+        value: '$31.81',
+        move: '+0.8%',
+        trend: 'up',
+        history: [31.1, 31.2, 31.4, 31.6, 31.7, 31.9, 31.85, 31.81],
+      },
+      {
+        metric: 'U3O8 Spot',
+        value: '$88.00/lb',
+        move: '+0.9%',
+        trend: 'up',
+        history: [86.2, 86.8, 87.3, 87.9, 88.4, 88.1, 88.0, 88.0],
+      },
     ],
     youtubeLive: [
       {

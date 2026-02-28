@@ -113,6 +113,22 @@ const toDomain = (url) => {
   }
 }
 
+const makeHistory = (price, changePercent) => {
+  if (!Number.isFinite(price)) return []
+  const points = 8
+  const drift = Number.isFinite(changePercent) ? changePercent / 100 : 0
+  const series = []
+
+  for (let i = 0; i < points; i += 1) {
+    const position = (i - (points - 1) / 2) / points
+    const wiggle = Math.sin(i * 1.1) * 0.004 * price
+    const value = price * (1 + drift * position) + wiggle
+    series.push(Number(value.toFixed(2)))
+  }
+
+  return series
+}
+
 async function fetchRss(query, limit = 3) {
   try {
     const feed = await parser.parseURL(rssUrl(query))
@@ -191,6 +207,7 @@ async function fetchFinance(tickers) {
           : row.regularMarketChangePercent < 0
             ? 'down'
             : 'flat',
+      history: makeHistory(row.regularMarketPrice, row.regularMarketChangePercent),
     }))
   } catch {
     return []

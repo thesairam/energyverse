@@ -41,6 +41,38 @@ const getYouTubeEmbedUrl = (item: LinkItem) => {
   return null
 }
 
+const renderSparkline = (history?: number[]) => {
+  if (!history || history.length === 0) return null
+  const width = 90
+  const height = 38
+  const max = Math.max(...history)
+  const min = Math.min(...history)
+  const span = max - min || 1
+  const sparkGradId = `sparkGrad-${Math.random().toString(36).slice(2, 7)}`
+  const points = history
+    .map((value, idx) => {
+      const x = (idx / Math.max(history.length - 1, 1)) * width
+      const y = height - ((value - min) / span) * height
+      return `${x},${y}`
+    })
+    .join(' ')
+
+  const trend = history[history.length - 1] - history[0] >= 0 ? 'up' : 'down'
+
+  return (
+    <svg className={`sparkline ${trend}`} viewBox={`0 0 ${width} ${height}`} role="presentation" aria-hidden="true">
+      <defs>
+        <linearGradient id={sparkGradId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#5cffb3" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#2bb673" stopOpacity="0.2" />
+        </linearGradient>
+      </defs>
+      <polyline points={points} fill={`url(#${sparkGradId})`} stroke="none" />
+      <polyline points={points} fill="none" strokeWidth={2} />
+    </svg>
+  )
+}
+
 function App() {
   const lastUpdated = useMemo(() => new Date().toUTCString(), [])
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<string | null>(null)
@@ -53,6 +85,27 @@ function App() {
   >('overview')
 
   const trending = ['Solar', 'Wind', 'Hydro', 'Geothermal', 'Nuclear', 'Storage']
+
+  const statusHighlights = [
+    {
+      label: 'Data Bridge',
+      value: apiStatus === 'online' ? 'Streaming' : 'Offline',
+      hint: apiStatus === 'online' ? 'Live ingest + cache' : 'Falling back to seeded data',
+      tone: apiStatus,
+    },
+    {
+      label: 'Sectors Watching',
+      value: `${liveSectorIntel.length} feeds`,
+      hint: `Active: ${activeSector}`,
+      tone: 'info',
+    },
+    {
+      label: 'Last Sync',
+      value: liveUpdatedAt ? new Date(liveUpdatedAt).toUTCString() : 'Waiting',
+      hint: 'Auto-refresh every 3 min',
+      tone: 'info',
+    },
+  ]
 
   useEffect(() => {
     if (!liveSectorIntel.find((sector) => sector.slug === activeSector) && liveSectorIntel.length > 0) {
@@ -129,6 +182,19 @@ function App() {
           <span key={item} className="topic-pill">
             {item}
           </span>
+        ))}
+      </section>
+
+      <section className="status-grid panel">
+        {statusHighlights.map((status) => (
+          <div key={status.label} className={`status-tile ${status.tone}`}>
+            <p className="status-label">{status.label}</p>
+            <div className="status-value-row">
+              <span className="status-dot" />
+              <strong>{status.value}</strong>
+            </div>
+            <p className="status-hint">{status.hint}</p>
+          </div>
         ))}
       </section>
 
@@ -424,17 +490,22 @@ function App() {
               )}
 
               {(activeSubPage === 'overview' || activeSubPage === 'finance') && (
-                <section className="sector-card">
-                <h4>Finance & Stocks</h4>
-                <ul>
-                  {selectedSector.finance.map((item) => (
-                    <li key={item.metric}>
-                      <p>{item.metric}</p>
-                      <strong>{item.value}</strong>
-                      <span className={item.trend}>{item.move}</span>
-                    </li>
-                  ))}
-                </ul>
+                <section className="sector-card finance-card">
+                  <h4>Finance & Stocks</h4>
+                  <ul className="finance-list">
+                    {selectedSector.finance.map((item) => (
+                      <li key={item.metric} className="finance-row">
+                        <div className="finance-meta">
+                          <p className="finance-label">{item.metric}</p>
+                          <div className="finance-price">
+                            <strong>{item.value}</strong>
+                            <span className={`pill ${item.trend}`}>{item.move}</span>
+                          </div>
+                        </div>
+                        <div className="finance-chart">{renderSparkline(item.history)}</div>
+                      </li>
+                    ))}
+                  </ul>
                 </section>
               )}
 

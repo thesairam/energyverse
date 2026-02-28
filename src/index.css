@@ -1,9 +1,9 @@
 :root {
-  font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.4;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Ubuntu Mono', monospace;
+  line-height: 1.5;
   font-weight: 400;
-  color: #dfe8f7;
-  background: #050b17;
+  color: #e6ffe7;
+  background: #020805;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -24,7 +24,22 @@ body,
 body {
   min-width: 320px;
   background:
-    radial-gradient(circle at 15% 10%, #15305a 0%, transparent 36%),
-    radial-gradient(circle at 85% 8%, #1a2f56 0%, transparent 40%),
-    #050b17;
+    radial-gradient(circle at 8% 12%, rgba(65, 199, 118, 0.15), transparent 24%),
+    radial-gradient(circle at 82% 6%, rgba(72, 139, 99, 0.12), transparent 26%),
+    radial-gradient(circle at 38% 64%, rgba(39, 94, 63, 0.1), transparent 30%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(46, 92, 66, 0.12),
+      rgba(46, 92, 66, 0.12) 1px,
+      rgba(8, 13, 9, 0.9) 1px,
+      rgba(8, 13, 9, 0.9) 20px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(46, 92, 66, 0.12),
+      rgba(46, 92, 66, 0.12) 1px,
+      rgba(8, 13, 9, 0.9) 1px,
+      rgba(8, 13, 9, 0.9) 20px
+    ),
+    #020805;
 }
