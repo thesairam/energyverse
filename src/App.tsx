@@ -80,11 +80,13 @@ function App() {
   const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>(seedNewsTape)
   const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>(seedSectorIntel)
   const [activeSector, setActiveSector] = useState<SectorIntel['slug']>('Solar')
-  const [activeSubPage, setActiveSubPage] = useState<
-    'overview' | 'latest' | 'tech' | 'products' | 'startups' | 'finance' | 'youtube' | 'community'
-  >('overview')
 
   const trending = ['Solar', 'Wind', 'Hydro', 'Geothermal', 'Nuclear', 'Storage']
+
+  const repoLinks = [
+    { label: 'GitHub Repo', href: 'https://github.com/thesairam/energyverse' },
+    { label: 'Discussions #1', href: 'https://github.com/thesairam/energyverse/discussions/1' },
+  ]
 
   const statusHighlights = [
     {
@@ -114,10 +116,6 @@ function App() {
   }, [activeSector, liveSectorIntel])
 
   useEffect(() => {
-    setActiveSubPage('overview')
-  }, [activeSector])
-
-  useEffect(() => {
     let mounted = true
 
     const fetchDashboard = async () => {
@@ -131,7 +129,18 @@ function App() {
         if (!mounted) return
 
         if (Array.isArray(payload.sectorIntel) && payload.sectorIntel.length > 0) {
-          setLiveSectorIntel(payload.sectorIntel)
+          setLiveSectorIntel((prev) => {
+            const prevBySlug = new Map<string, SectorIntel>()
+            prev.forEach((row) => prevBySlug.set(row.slug, row))
+
+            return payload.sectorIntel.map((sector: SectorIntel) => {
+              const backup = prevBySlug.get(sector.slug) || seedSectorIntel.find((s) => s.slug === sector.slug)
+              return {
+                ...sector,
+                finance: sector.finance && sector.finance.length > 0 ? sector.finance : backup?.finance || [],
+              }
+            })
+          })
         }
 
         if (Array.isArray(payload.newsTape) && payload.newsTape.length > 0) {
@@ -170,6 +179,13 @@ function App() {
           <h1>Renewables & Nuclear Intelligence Console</h1>
         </div>
         <div className="topbar-right">
+          <div className="top-links" aria-label="Primary links">
+            {repoLinks.map((link) => (
+              <a key={link.href} className="link-chip" href={link.href} target="_blank" rel="noreferrer">
+                {link.label}
+              </a>
+            ))}
+          </div>
           <span className="live-dot">LIVE</span>
           <span className="updated">Updated {lastUpdated}</span>
           <span className={`api-chip ${apiStatus}`}>API {apiStatus}</span>
@@ -349,65 +365,6 @@ function App() {
 
         {selectedSector && (
           <article key={selectedSector.slug} className="sector-panel">
-            <div className="subpage-tabs" role="tablist" aria-label="Sector sub pages">
-              <button
-                className={`subpage-tab ${activeSubPage === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('overview')}
-                type="button"
-              >
-                Overview
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'latest' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('latest')}
-                type="button"
-              >
-                Latest News
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'tech' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('tech')}
-                type="button"
-              >
-                Tech News
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'products' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('products')}
-                type="button"
-              >
-                Products
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'startups' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('startups')}
-                type="button"
-              >
-                Startups
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'finance' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('finance')}
-                type="button"
-              >
-                Finance
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'youtube' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('youtube')}
-                type="button"
-              >
-                YouTube
-              </button>
-              <button
-                className={`subpage-tab ${activeSubPage === 'community' ? 'active' : ''}`}
-                onClick={() => setActiveSubPage('community')}
-                type="button"
-              >
-                Community
-              </button>
-            </div>
-
             <div className="sector-header">
               <div>
                 <p className="sector-label">{selectedSector.slug}</p>
@@ -417,8 +374,7 @@ function App() {
             </div>
 
             <div className="sector-grid">
-              {(activeSubPage === 'overview' || activeSubPage === 'latest') && (
-                <section className="sector-card">
+              <section className="sector-card">
                 <h4>Latest News</h4>
                 <ul>
                   {selectedSector.latestNews.map((item) => (
@@ -432,11 +388,9 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                </section>
-              )}
+              </section>
 
-              {(activeSubPage === 'overview' || activeSubPage === 'tech') && (
-                <section className="sector-card">
+              <section className="sector-card">
                 <h4>Tech News</h4>
                 <ul>
                   {selectedSector.techNews.map((item) => (
@@ -450,11 +404,9 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                </section>
-              )}
+              </section>
 
-              {(activeSubPage === 'overview' || activeSubPage === 'products') && (
-                <section className="sector-card">
+              <section className="sector-card">
                 <h4>New Products</h4>
                 <ul>
                   {selectedSector.products.map((item) => (
@@ -468,11 +420,9 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                </section>
-              )}
+              </section>
 
-              {(activeSubPage === 'overview' || activeSubPage === 'startups') && (
-                <section className="sector-card">
+              <section className="sector-card">
                 <h4>Startup Radar</h4>
                 <ul>
                   {selectedSector.startups.map((item) => (
@@ -486,31 +436,27 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                </section>
-              )}
+              </section>
 
-              {(activeSubPage === 'overview' || activeSubPage === 'finance') && (
-                <section className="sector-card finance-card">
-                  <h4>Finance & Stocks</h4>
-                  <ul className="finance-list">
-                    {selectedSector.finance.map((item) => (
-                      <li key={item.metric} className="finance-row">
-                        <div className="finance-meta">
-                          <p className="finance-label">{item.metric}</p>
-                          <div className="finance-price">
-                            <strong>{item.value}</strong>
-                            <span className={`pill ${item.trend}`}>{item.move}</span>
-                          </div>
+              <section className="sector-card finance-card">
+                <h4>Finance & Stocks</h4>
+                <ul className="finance-list">
+                  {selectedSector.finance.map((item) => (
+                    <li key={item.metric} className="finance-row">
+                      <div className="finance-meta">
+                        <p className="finance-label">{item.metric}</p>
+                        <div className="finance-price">
+                          <strong>{item.value}</strong>
+                          <span className={`pill ${item.trend}`}>{item.move}</span>
                         </div>
-                        <div className="finance-chart">{renderSparkline(item.history)}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
+                      </div>
+                      <div className="finance-chart">{renderSparkline(item.history)}</div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
 
-              {(activeSubPage === 'overview' || activeSubPage === 'youtube') && (
-                <section className="sector-card sector-card-video">
+              <section className="sector-card sector-card-video">
                 <h4>YouTube Live</h4>
                 {featuredVideo?.embed ? (
                   <div className="video-wrap">
@@ -538,11 +484,9 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                </section>
-              )}
+              </section>
 
-              {(activeSubPage === 'overview' || activeSubPage === 'community') && (
-                <section className="sector-card">
+              <section className="sector-card">
                 <h4>Reddit & GitHub Topics</h4>
                 <ul>
                   {selectedSector.community.map((item) => (
@@ -554,8 +498,7 @@ function App() {
                     </li>
                   ))}
                 </ul>
-                </section>
-              )}
+              </section>
             </div>
           </article>
         )}

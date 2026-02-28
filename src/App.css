@@ -50,6 +50,31 @@
   font-size: 0.75rem;
 }
 
+.top-links {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-right: 0.4rem;
+}
+
+.link-chip {
+  border: 1px solid #2f8d52;
+  background: linear-gradient(120deg, rgba(18, 52, 31, 0.9), rgba(8, 17, 12, 0.95));
+  color: #c8ffd2;
+  border-radius: 8px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+  text-decoration: none;
+  letter-spacing: 0.03em;
+  box-shadow: 0 0 0 1px rgba(50, 169, 95, 0.35);
+}
+
+.link-chip:hover {
+  border-color: #60d18a;
+  color: #e9ffe9;
+  box-shadow: 0 0 0 1px rgba(84, 220, 132, 0.6);
+}
+
 .live-dot {
   background: rgba(27, 202, 123, 0.17);
   color: #65e5ab;
@@ -435,35 +460,6 @@ th {
 
 .sector-panel {
   padding: 1rem;
-}
-
-.subpage-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-bottom: 0.7rem;
-}
-
-.subpage-tab {
-  border: 1px solid #315f39;
-  background: #08110b;
-  color: #8eff9b;
-  border-radius: 6px;
-  padding: 0.28rem 0.58rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-
-.subpage-tab:hover {
-  border-color: #73d880;
-}
-
-.subpage-tab.active {
-  background: #14301a;
-  color: #deff9e;
-  border-color: #9dff8d;
 }
 
 .sector-header {
