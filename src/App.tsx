@@ -93,19 +93,76 @@ const regionGroups: Record<Region, Region[]> = {
   Germany: ['Germany'],
 }
 
+const regionAliases: Record<string, Region> = {
+  EU: 'EMEA',
+  Europe: 'EMEA',
+  Nordics: 'EMEA',
+  Norway: 'EMEA',
+  Kenya: 'EMEA',
+  US: 'NAM',
+  USA: 'NAM',
+  Canada: 'NAM',
+  Mexico: 'NAM',
+  Brazil: 'NAM',
+  LATAM: 'NAM',
+  Australia: 'APAC',
+}
+
+const regionCenters: Record<string, [number, number]> = {
+  Global: [20, 10],
+  EMEA: [49, 12],
+  NAM: [39, -98],
+  APAC: [22, 108],
+  India: [22.5, 78.9],
+  UK: [54.5, -2.3],
+  France: [46.2, 2.2],
+  China: [35.8, 104.2],
+  Japan: [36.3, 138.3],
+  Singapore: [1.35, 103.8],
+  Netherlands: [52.1, 5.3],
+  Germany: [51.2, 10.4],
+  US: [39.8, -98.6],
+  Canada: [56.1, -106.3],
+  Mexico: [23.6, -102.6],
+  Brazil: [-14.2, -51.9],
+  Norway: [60.5, 8.5],
+  Kenya: [0.2, 37.9],
+  EU: [50.5, 10.0],
+  Nordics: [62.0, 15.0],
+  Australia: [-24.5, 133.9],
+}
+
+const normalizeRegionLabel = (value?: string | Region) => {
+  if (!value) return undefined
+  if (regionGroups[value as Region]) return value as Region
+  return regionAliases[value] || value
+}
+
+const jitteredCoords = (regionLabel: string | Region | undefined, index: number) => {
+  const normalized = normalizeRegionLabel(regionLabel)
+  const base = regionCenters[normalized || 'Global'] || regionCenters.Global
+  const angle = (((index + 3) * 137) % 360) * (Math.PI / 180)
+  const radius = 0.8 + (index % 5) * 0.55
+  const lat = Math.max(-70, Math.min(75, base[0] + Math.sin(angle) * radius))
+  const lon = Math.max(-179, Math.min(179, base[1] + Math.cos(angle) * radius * 1.25))
+  return [lat, lon] as [number, number]
+}
+
 const regionMatch = (itemRegion: Region | string | undefined, selectedRegion: Region, selectedCountry: Region | 'All') => {
-  if (!itemRegion) {
+  const normalizedItemRegion = normalizeRegionLabel(itemRegion)
+
+  if (!normalizedItemRegion) {
     return selectedRegion === 'Global' && selectedCountry === 'All'
   }
 
   if (selectedCountry !== 'All') {
-    return itemRegion === selectedCountry
+    return normalizedItemRegion === selectedCountry
   }
 
   if (selectedRegion === 'Global') return true
-  if (itemRegion === selectedRegion) return true
+  if (normalizedItemRegion === selectedRegion) return true
   const members = regionGroups[selectedRegion] || []
-  return members.includes(itemRegion as Region)
+  return members.includes(normalizedItemRegion as Region)
 }
 
 const filterByRegion = <T extends { region?: string | Region; geography?: Region }>(
@@ -193,6 +250,20 @@ const sectorColors: Record<SectorIntel['slug'], string> = {
   EV: '#6fe18f',
 }
 
+const globeBaseStyle = {
+  version: 8,
+  sources: {},
+  layers: [
+    {
+      id: 'background',
+      type: 'background',
+      paint: {
+        'background-color': '#07130b',
+      },
+    },
+  ],
+} as const
+
 type LayerKey =
   | 'plants'
   | 'storage'
@@ -201,6 +272,7 @@ type LayerKey =
   | 'transmission'
   | 'resource'
   | 'policy'
+  | 'topics'
 
 type BasePoint = {
   id: string
@@ -211,7 +283,7 @@ type BasePoint = {
   status: string
   owner?: string
   updatedAt: string
-  regionTag?: Region
+  regionTag?: Region | string
 }
 
 type LineFeature = {
@@ -446,6 +518,7 @@ const layerLabels: Record<LayerKey, string> = {
   transmission: 'Transmission',
   resource: 'Resource Potential',
   policy: 'Policy & Events',
+  topics: 'Intel Topics',
 }
 
 const timePresets = [
@@ -489,6 +562,16 @@ function App() {
     transmission: true,
     resource: true,
     policy: true,
+    topics: true,
+  })
+  const [sectorToggles, setSectorToggles] = useState<Record<SectorIntel['slug'], boolean>>({
+    Solar: true,
+    Wind: true,
+    Hydro: true,
+    Geothermal: true,
+    Storage: true,
+    Nuclear: true,
+    EV: true,
   })
   const [mapCommand, setMapCommand] = useState('')
   const [mapReady, setMapReady] = useState(false)
@@ -501,7 +584,8 @@ function App() {
     const cutoff = timeWindowDays > 0 ? Date.now() - timeWindowDays * 24 * 60 * 60 * 1000 : 0
     const inWindow = (dt: string) => (cutoff === 0 ? true : new Date(dt).getTime() >= cutoff)
 
-    const regionFilter = (tag?: Region) => regionMatch(tag, activeRegion, activeCountry)
+    const regionFilter = (tag?: Region | string) => regionMatch(tag, activeRegion, activeCountry)
+    const sectorFilter = (sector: SectorIntel['slug']) => sectorToggles[sector] !== false
 
     const pointToFeature = (item: BasePoint) => ({
       type: 'Feature' as const,
@@ -518,18 +602,58 @@ function App() {
       },
     })
 
-    const plants = layerData.plants.filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag)).map(pointToFeature)
+    const plants = layerData.plants
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .map(pointToFeature)
     const storage = layerData.storage
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
       .map(pointToFeature)
     const projects = layerData.projects
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
       .map(pointToFeature)
     const hydrogen = layerData.hydrogen
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
       .map(pointToFeature)
     const policy = layerData.policy
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .map(pointToFeature)
+
+    const topicsRaw: BasePoint[] = []
+    liveSectorIntel.forEach((sector) => {
+      if (!sectorFilter(sector.slug)) return
+
+      const appendTopic = (
+        category: string,
+        idx: number,
+        text: string,
+        source: string,
+        region?: string | Region,
+      ) => {
+        const normalized = normalizeRegionLabel(region)
+        if (!regionMatch(normalized, activeRegion, activeCountry)) return
+        topicsRaw.push({
+          id: `topic-${sector.slug}-${category.toLowerCase()}-${idx}`,
+          coords: jitteredCoords(normalized || 'Global', idx),
+          sector: sector.slug,
+          subtype: `${category}: ${text.slice(0, 58)}`,
+          status: category,
+          owner: source,
+          updatedAt: nowIso,
+          regionTag: normalized,
+        })
+      }
+
+      sector.latestNews.forEach((item, idx) => appendTopic('Latest', idx, item.title, item.source, item.region))
+      sector.techNews.forEach((item, idx) => appendTopic('Tech', idx + 20, item.title, item.source, item.region))
+      sector.products.forEach((item, idx) => appendTopic('Product', idx + 40, item.name, item.company, item.region))
+      sector.startups.forEach((item, idx) => appendTopic('Startup', idx + 60, item.name, item.name, item.geography || item.region))
+      sector.finance.forEach((item, idx) => appendTopic('Finance', idx + 80, item.metric, sector.slug, item.region))
+      sector.youtubeLive.forEach((item, idx) => appendTopic('Live', idx + 100, item.title, item.source, item.region))
+      sector.community.forEach((item, idx) => appendTopic(item.platform, idx + 120, item.topic, item.platform, item.region))
+    })
+
+    const topics = topicsRaw
+      .filter((p) => inWindow(p.updatedAt) && sectorFilter(p.sector))
       .map(pointToFeature)
 
     const transmission = layerData.transmission
@@ -565,10 +689,11 @@ function App() {
       projects: { type: 'FeatureCollection' as const, features: projects },
       hydrogen: { type: 'FeatureCollection' as const, features: hydrogen },
       policy: { type: 'FeatureCollection' as const, features: policy },
+      topics: { type: 'FeatureCollection' as const, features: topics },
       transmission: { type: 'FeatureCollection' as const, features: transmission },
       resource: { type: 'FeatureCollection' as const, features: resource },
     }
-  }, [timeWindowDays, activeRegion, activeCountry])
+  }, [timeWindowDays, activeRegion, activeCountry, liveSectorIntel, sectorToggles])
 
   const counts = useMemo(() => {
     return Object.entries(filteredGeo).reduce<Record<string, number>>((acc, [key, collection]) => {
@@ -583,6 +708,7 @@ function App() {
       `Storage: ${counts.storage || 0}`,
       `Projects: ${counts.projects || 0}`,
       `H2 hubs: ${counts.hydrogen || 0}`,
+      `Topics: ${counts.topics || 0}`,
       `Grid lines: ${counts.transmission || 0}`,
       `Resource tiles: ${counts.resource || 0}`,
       `Policy events: ${counts.policy || 0}`,
@@ -690,7 +816,7 @@ function App() {
 
       mapInstance = new maplibre.Map({
         container: 'globe-map',
-        style: 'https://demotiles.maplibre.org/style.json',
+        style: globeBaseStyle as any,
         center: [10, 25],
         zoom: 1.5,
         pitch: 25,
@@ -752,6 +878,7 @@ function App() {
       ensureSource('projects-src', filteredGeo.projects)
       ensureSource('hydrogen-src', filteredGeo.hydrogen)
       ensureSource('policy-src', filteredGeo.policy)
+      ensureSource('topics-src', filteredGeo.topics)
       ensureSource('tx-src', filteredGeo.transmission)
       ensureSource('resource-src', filteredGeo.resource)
 
@@ -766,10 +893,11 @@ function App() {
             type: 'circle',
             source: src,
             paint: {
-              'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 3, 4, 6, 7, 10],
+              'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 4.5, 4, 8, 7, 13],
               'circle-color': ['coalesce', ['get', 'color'], colorFallback],
-              'circle-stroke-color': '#0b1f13',
-              'circle-stroke-width': 0.8,
+              'circle-stroke-color': '#e7ffe7',
+              'circle-stroke-width': 1.25,
+              'circle-opacity': 0.96,
             },
           })
 
@@ -793,6 +921,7 @@ function App() {
       pointLayer('projects-layer', 'projects-src', '#ffd47e')
       pointLayer('hydrogen-layer', 'hydrogen-src', '#76d1ff')
       pointLayer('policy-layer', 'policy-src', '#ff9f7a')
+      pointLayer('topics-layer', 'topics-src', '#a0e0ff')
 
       if (!map.getLayer('tx-layer')) {
         map.addLayer({
@@ -825,6 +954,7 @@ function App() {
       setVisibility('projects-layer', layerToggles.projects)
       setVisibility('hydrogen-layer', layerToggles.hydrogen)
       setVisibility('policy-layer', layerToggles.policy)
+      setVisibility('topics-layer', layerToggles.topics)
       setVisibility('tx-layer', layerToggles.transmission)
       setVisibility('resource-layer', layerToggles.resource)
     }
@@ -935,6 +1065,7 @@ function App() {
     }
 
     const nextToggles = { ...layerToggles }
+    const nextSectorToggles = { ...sectorToggles }
     for (let i = 0; i < parts.length; i += 1) {
       const token = parts[i]
       if (token === 'time' && parts[i + 1]) {
@@ -954,17 +1085,35 @@ function App() {
         transmission: 'transmission',
         resource: 'resource',
         policy: 'policy',
+        topic: 'topics',
+        topics: 'topics',
+      }
+      const mapTokenToSector: Record<string, SectorIntel['slug']> = {
+        solar: 'Solar',
+        wind: 'Wind',
+        hydro: 'Hydro',
+        geothermal: 'Geothermal',
+        storage: 'Storage',
+        nuclear: 'Nuclear',
+        ev: 'EV',
       }
       const layerKey = mapTokenToLayer[token]
       if (layerKey) {
         nextToggles[layerKey] = true
       }
+      const sectorKey = mapTokenToSector[token]
+      if (sectorKey) {
+        nextSectorToggles[sectorKey] = true
+      }
       if (token === 'hide' && parts[i + 1]) {
         const hideKey = mapTokenToLayer[parts[i + 1]]
         if (hideKey) nextToggles[hideKey] = false
+        const hideSectorKey = mapTokenToSector[parts[i + 1]]
+        if (hideSectorKey) nextSectorToggles[hideSectorKey] = false
       }
     }
     setLayerToggles(nextToggles)
+    setSectorToggles(nextSectorToggles)
   }
 
   return (
@@ -1010,6 +1159,7 @@ function App() {
                 'storage',
                 'projects',
                 'hydrogen',
+                'topics',
                 'transmission',
                 'resource',
                 'policy',
@@ -1024,6 +1174,18 @@ function App() {
                 <span>
                   {layerLabels[key]}
                 </span>
+              </label>
+            ))}
+          </div>
+          <div className="layer-switches">
+            {sectorOrder.map((sector) => (
+              <label key={sector} className="layer-toggle">
+                <input
+                  type="checkbox"
+                  checked={sectorToggles[sector]}
+                  onChange={(e) => setSectorToggles((prev) => ({ ...prev, [sector]: e.target.checked }))}
+                />
+                <span>{sector}</span>
               </label>
             ))}
           </div>
@@ -1058,7 +1220,7 @@ function App() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') applyCommand()
               }}
-              placeholder="Command palette: e.g. 'time 7 projects hydrogen', 'hide transmission', 'find Surya'"
+              placeholder="Command: 'time 7 topics solar', 'hide wind', 'hide transmission', 'find Surya'"
             />
             <button type="button" onClick={applyCommand}>
               Run
