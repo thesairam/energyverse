@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   type LinkItem,
   type NewsItem,
+  type Region,
   type SectorIntel,
   businessSignals,
   emissions,
@@ -73,20 +75,520 @@ const renderSparkline = (history?: number[]) => {
   )
 }
 
+const macroRegions: Region[] = ['Global', 'EMEA', 'NAM', 'APAC']
+const countryRegions: Region[] = ['India', 'UK', 'France', 'China', 'Japan', 'Singapore', 'Netherlands', 'Germany']
+
+const regionGroups: Record<Region, Region[]> = {
+  Global: [],
+  EMEA: ['UK', 'France', 'Germany', 'Netherlands'],
+  NAM: ['US', 'Canada'] as unknown as Region[],
+  APAC: ['India', 'China', 'Japan', 'Singapore'] as unknown as Region[],
+  India: ['India'],
+  UK: ['UK'],
+  France: ['France'],
+  China: ['China'],
+  Japan: ['Japan'],
+  Singapore: ['Singapore'],
+  Netherlands: ['Netherlands'],
+  Germany: ['Germany'],
+}
+
+const regionMatch = (itemRegion: Region | string | undefined, selectedRegion: Region, selectedCountry: Region | 'All') => {
+  if (!itemRegion) {
+    return selectedRegion === 'Global' && selectedCountry === 'All'
+  }
+
+  if (selectedCountry !== 'All') {
+    return itemRegion === selectedCountry
+  }
+
+  if (selectedRegion === 'Global') return true
+  if (itemRegion === selectedRegion) return true
+  const members = regionGroups[selectedRegion] || []
+  return members.includes(itemRegion as Region)
+}
+
+const filterByRegion = <T extends { region?: string | Region; geography?: Region }>(
+  items: T[],
+  selectedRegion: Region,
+  selectedCountry: Region | 'All',
+) => {
+  if (!items) return []
+  const filtered = items.filter((item) =>
+    regionMatch((item.region as Region | string | undefined) ?? item.geography, selectedRegion, selectedCountry),
+  )
+  return filtered
+}
+
+const regionHeat: Record<Region | 'Global', Array<{ region: string; score: number; metric: string }>> = {
+  Global: [
+    { region: 'EMEA', score: 68, metric: 'Grid-scale storage build rate' },
+    { region: 'NAM', score: 72, metric: 'V2G pilot density' },
+    { region: 'APAC', score: 74, metric: 'Utility solar run-rate' },
+  ],
+  EMEA: [
+    { region: 'Germany', score: 76, metric: 'Battery revenue stacking' },
+    { region: 'UK', score: 71, metric: 'Offshore wind queue velocity' },
+    { region: 'France', score: 67, metric: 'Nuclear uprate cadence' },
+  ],
+  NAM: [
+    { region: 'US', score: 73, metric: 'ISO capacity awards' },
+    { region: 'Canada', score: 65, metric: 'Hydro + storage refurb' },
+    { region: 'Mexico', score: 58, metric: 'Grid interconnection adds' },
+  ],
+  APAC: [
+    { region: 'China', score: 78, metric: 'Utility PV run-rate' },
+    { region: 'Japan', score: 69, metric: 'V2H/V2G pilots' },
+    { region: 'India', score: 72, metric: 'Hybrid solar+storage auctions' },
+  ],
+  India: [
+    { region: 'India', score: 72, metric: 'Hybrid auctions' },
+    { region: 'APAC', score: 65, metric: 'Regional coupling' },
+    { region: 'Global', score: 60, metric: 'VC interest in EV infra' },
+  ],
+  UK: [
+    { region: 'UK', score: 71, metric: 'Offshore FID velocity' },
+    { region: 'EMEA', score: 64, metric: 'Grid-flex tenders' },
+    { region: 'Global', score: 59, metric: 'Storage margins' },
+  ],
+  France: [
+    { region: 'France', score: 67, metric: 'Nuclear uprates' },
+    { region: 'EMEA', score: 62, metric: 'Hydro refurb push' },
+    { region: 'Global', score: 58, metric: 'EV charging density' },
+  ],
+  China: [
+    { region: 'China', score: 78, metric: 'Utility PV run-rate' },
+    { region: 'APAC', score: 70, metric: 'Battery manufacturing' },
+    { region: 'Global', score: 64, metric: 'EV exports' },
+  ],
+  Japan: [
+    { region: 'Japan', score: 69, metric: 'V2H/V2G pilots' },
+    { region: 'APAC', score: 65, metric: 'Offshore floating prep' },
+    { region: 'Global', score: 60, metric: 'Hydrogen tie-ins' },
+  ],
+  Singapore: [
+    { region: 'Singapore', score: 66, metric: 'Grid services via BESS' },
+    { region: 'APAC', score: 63, metric: 'EV charging density' },
+    { region: 'Global', score: 58, metric: 'Data center resiliency' },
+  ],
+  Netherlands: [
+    { region: 'Netherlands', score: 70, metric: 'Grid congestion relief' },
+    { region: 'EMEA', score: 64, metric: 'V2G bus depots' },
+    { region: 'Global', score: 59, metric: 'Heat pump load shifting' },
+  ],
+  Germany: [
+    { region: 'Germany', score: 76, metric: 'Battery revenue stacking' },
+    { region: 'EMEA', score: 65, metric: 'Renewable curtailment mgmt' },
+    { region: 'Global', score: 60, metric: 'Electrolyzer pilots' },
+  ],
+}
+
+const sectorColors: Record<SectorIntel['slug'], string> = {
+  Solar: '#f5c04d',
+  Wind: '#6ac1ff',
+  Hydro: '#53e0c4',
+  Geothermal: '#f78c4c',
+  Storage: '#8be07f',
+  Nuclear: '#b4b4ff',
+  EV: '#6fe18f',
+}
+
+type LayerKey =
+  | 'plants'
+  | 'storage'
+  | 'projects'
+  | 'hydrogen'
+  | 'transmission'
+  | 'resource'
+  | 'policy'
+
+type BasePoint = {
+  id: string
+  coords: [number, number]
+  sector: SectorIntel['slug']
+  subtype: string
+  capacityMW?: number
+  status: string
+  owner?: string
+  updatedAt: string
+  regionTag?: Region
+}
+
+type LineFeature = {
+  id: string
+  path: [number, number][]
+  capacityMW?: number
+  status: string
+  updatedAt: string
+  name: string
+}
+
+type PolygonFeature = {
+  id: string
+  ring: [number, number][]
+  metric: string
+  value: number
+  updatedAt: string
+}
+
+const nowIso = new Date().toISOString().slice(0, 10)
+
+const layerData: {
+  plants: BasePoint[]
+  storage: BasePoint[]
+  projects: BasePoint[]
+  hydrogen: BasePoint[]
+  policy: BasePoint[]
+  transmission: LineFeature[]
+  resource: PolygonFeature[]
+} = {
+  plants: [
+    {
+      id: 'plant-wind-uk',
+      coords: [54.4, 1.2],
+      sector: 'Wind',
+      subtype: 'Offshore wind',
+      capacityMW: 1200,
+      status: 'Operational',
+      owner: 'NorthSea Wind JV',
+      updatedAt: nowIso,
+      regionTag: 'UK',
+    },
+    {
+      id: 'plant-solar-india',
+      coords: [24.5, 72.6],
+      sector: 'Solar',
+      subtype: 'Utility PV',
+      capacityMW: 800,
+      status: 'Commissioning',
+      owner: 'Surya Power',
+      updatedAt: nowIso,
+      regionTag: 'India',
+    },
+    {
+      id: 'plant-hydro-canada',
+      coords: [52.8, -122.4],
+      sector: 'Hydro',
+      subtype: 'Reservoir hydro',
+      capacityMW: 1500,
+      status: 'Operational',
+      owner: 'BC Hydro',
+      updatedAt: '2026-02-22',
+      regionTag: 'NAM',
+    },
+    {
+      id: 'plant-geo-iceland',
+      coords: [64.7, -19.5],
+      sector: 'Geothermal',
+      subtype: 'Flash steam',
+      capacityMW: 300,
+      status: 'Operational',
+      owner: 'Iceland Geo',
+      updatedAt: '2026-02-19',
+      regionTag: 'EMEA',
+    },
+  ],
+  storage: [
+    {
+      id: 'storage-ca',
+      coords: [37.3, -121.9],
+      sector: 'Storage',
+      subtype: 'Li-ion BESS',
+      capacityMW: 350,
+      status: 'Operational',
+      owner: 'Silicon Valley ISO',
+      updatedAt: nowIso,
+      regionTag: 'NAM',
+    },
+    {
+      id: 'storage-de',
+      coords: [51.0, 7.0],
+      sector: 'Storage',
+      subtype: 'Li-ion BESS',
+      capacityMW: 100,
+      status: 'Construction',
+      owner: 'Rhein Storage',
+      updatedAt: '2026-02-26',
+      regionTag: 'Germany',
+    },
+  ],
+  projects: [
+    {
+      id: 'project-solar-mena',
+      coords: [23.6, 53.7],
+      sector: 'Solar',
+      subtype: 'Hybrid solar+storage',
+      capacityMW: 2200,
+      status: 'Under construction',
+      owner: 'Gulf Renewables',
+      updatedAt: '2026-02-28',
+      regionTag: 'EMEA',
+    },
+    {
+      id: 'project-offshore-jp',
+      coords: [38.1, 142.3],
+      sector: 'Wind',
+      subtype: 'Floating offshore',
+      capacityMW: 900,
+      status: 'FEED',
+      owner: 'Pacific Wind',
+      updatedAt: '2026-02-25',
+      regionTag: 'Japan',
+    },
+  ],
+  hydrogen: [
+    {
+      id: 'h2-au',
+      coords: [-22.6, 118.0],
+      sector: 'Hydro',
+      subtype: 'Green H2 hub',
+      capacityMW: 500,
+      status: 'Pilot',
+      owner: 'Pilbara H2',
+      updatedAt: nowIso,
+      regionTag: 'APAC',
+    },
+    {
+      id: 'h2-eu',
+      coords: [52.4, 4.9],
+      sector: 'Hydro',
+      subtype: 'Electrolyzer cluster',
+      capacityMW: 200,
+      status: 'Operational',
+      owner: 'Delta Hydrogen',
+      updatedAt: '2026-02-24',
+      regionTag: 'Netherlands',
+    },
+  ],
+  policy: [
+    {
+      id: 'policy-us-v2g',
+      coords: [40.0, -96.0],
+      sector: 'EV',
+      subtype: 'Policy event',
+      status: 'Announced',
+      updatedAt: nowIso,
+      owner: 'FERC',
+      regionTag: 'NAM',
+    },
+    {
+      id: 'policy-eu-grid',
+      coords: [50.1, 8.7],
+      sector: 'Storage',
+      subtype: 'Policy event',
+      status: 'Effective',
+      updatedAt: '2026-02-23',
+      owner: 'EU ENTSO-E',
+      regionTag: 'EMEA',
+    },
+  ],
+  transmission: [
+    {
+      id: 'tx-nam',
+      path: [
+        [34.0, -118.3],
+        [36.1, -115.1],
+        [39.7, -104.9],
+      ],
+      capacityMW: 4000,
+      status: 'Operational',
+      updatedAt: '2026-02-21',
+      name: 'West Connect',
+    },
+    {
+      id: 'tx-emea',
+      path: [
+        [52.5, 13.4],
+        [50.1, 8.7],
+        [48.8, 2.3],
+      ],
+      capacityMW: 6000,
+      status: 'Upgrade',
+      updatedAt: '2026-02-27',
+      name: 'Central Europe Backbone',
+    },
+  ],
+  resource: [
+    {
+      id: 'solar-mena',
+      ring: [
+        [18.0, 44.0],
+        [26.0, 44.0],
+        [26.0, 56.0],
+        [18.0, 56.0],
+        [18.0, 44.0],
+      ],
+      metric: 'Solar GHI',
+      value: 2200,
+      updatedAt: '2026-02-15',
+    },
+    {
+      id: 'wind-nsea',
+      ring: [
+        [56.0, -4.0],
+        [58.0, 2.0],
+        [54.0, 4.0],
+        [52.0, -2.0],
+        [56.0, -4.0],
+      ],
+      metric: 'Wind CF',
+      value: 45,
+      updatedAt: '2026-02-12',
+    },
+  ],
+}
+
+const layerLabels: Record<LayerKey, string> = {
+  plants: 'Renewable Plants',
+  storage: 'Storage',
+  projects: 'Projects (UC)',
+  hydrogen: 'Green Hydrogen',
+  transmission: 'Transmission',
+  resource: 'Resource Potential',
+  policy: 'Policy & Events',
+}
+
+const timePresets = [
+  { label: '24h', days: 1 },
+  { label: '7d', days: 7 },
+  { label: '30d', days: 30 },
+  { label: 'All', days: 0 },
+]
+
 function App() {
   const lastUpdated = useMemo(() => new Date().toUTCString(), [])
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<string | null>(null)
   const [apiStatus, setApiStatus] = useState<'online' | 'offline'>('offline')
   const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>(seedNewsTape)
   const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>(seedSectorIntel)
-  const [activeSector, setActiveSector] = useState<SectorIntel['slug']>('Solar')
+  const [activeSector, setActiveSector] = useState<SectorIntel['slug']>('Storage')
+  const [activeRegion, setActiveRegion] = useState<Region>('Global')
+  const [activeCountry, setActiveCountry] = useState<Region | 'All'>('All')
 
-  const trending = ['Solar', 'Wind', 'Hydro', 'Geothermal', 'Nuclear', 'Storage']
+  const sectorOrder: SectorIntel['slug'][] = ['Storage', 'EV', 'Nuclear', 'Solar', 'Wind', 'Hydro', 'Geothermal']
+  const orderedSectors = [...liveSectorIntel].sort((a, b) => {
+    const aIdx = sectorOrder.indexOf(a.slug)
+    const bIdx = sectorOrder.indexOf(b.slug)
+    if (aIdx === -1 && bIdx === -1) return a.slug.localeCompare(b.slug)
+    if (aIdx === -1) return 1
+    if (bIdx === -1) return -1
+    return aIdx - bIdx
+  })
+  const trending = orderedSectors.map((s) => s.slug)
 
   const repoLinks = [
     { label: 'GitHub Repo', href: 'https://github.com/thesairam/energyverse' },
     { label: 'Discussions #1', href: 'https://github.com/thesairam/energyverse/discussions/1' },
   ]
+  const [timeWindowDays, setTimeWindowDays] = useState<number>(7)
+  const [layerToggles, setLayerToggles] = useState<Record<LayerKey, boolean>>({
+    plants: true,
+    storage: true,
+    projects: true,
+    hydrogen: true,
+    transmission: true,
+    resource: true,
+    policy: true,
+  })
+  const [mapCommand, setMapCommand] = useState('')
+  const [mapReady, setMapReady] = useState(false)
+  const [streamSelections, setStreamSelections] = useState<Record<string, number>>({})
+  const [aiSummary, setAiSummary] = useState('Collecting map signals...')
+  const [searchStatus, setSearchStatus] = useState('')
+  const mapRef = useRef<null | any>(null)
+
+  const filteredGeo = useMemo(() => {
+    const cutoff = timeWindowDays > 0 ? Date.now() - timeWindowDays * 24 * 60 * 60 * 1000 : 0
+    const inWindow = (dt: string) => (cutoff === 0 ? true : new Date(dt).getTime() >= cutoff)
+
+    const regionFilter = (tag?: Region) => regionMatch(tag, activeRegion, activeCountry)
+
+    const pointToFeature = (item: BasePoint) => ({
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [item.coords[1], item.coords[0]] },
+      properties: {
+        id: item.id,
+        sector: item.sector,
+        subtype: item.subtype,
+        capacityMW: item.capacityMW ?? null,
+        status: item.status,
+        owner: item.owner ?? 'N/A',
+        updatedAt: item.updatedAt,
+        color: sectorColors[item.sector],
+      },
+    })
+
+    const plants = layerData.plants.filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag)).map(pointToFeature)
+    const storage = layerData.storage
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .map(pointToFeature)
+    const projects = layerData.projects
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .map(pointToFeature)
+    const hydrogen = layerData.hydrogen
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .map(pointToFeature)
+    const policy = layerData.policy
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .map(pointToFeature)
+
+    const transmission = layerData.transmission
+      .filter((t) => inWindow(t.updatedAt))
+      .map((t) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: t.path.map(([lat, lon]) => [lon, lat]) },
+        properties: {
+          id: t.id,
+          name: t.name,
+          capacityMW: t.capacityMW,
+          status: t.status,
+          updatedAt: t.updatedAt,
+        },
+      }))
+
+    const resource = layerData.resource
+      .filter((r) => inWindow(r.updatedAt))
+      .map((r) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Polygon' as const, coordinates: [[...r.ring.map(([lat, lon]) => [lon, lat])]] },
+        properties: {
+          id: r.id,
+          metric: r.metric,
+          value: r.value,
+          updatedAt: r.updatedAt,
+        },
+      }))
+
+    return {
+      plants: { type: 'FeatureCollection' as const, features: plants },
+      storage: { type: 'FeatureCollection' as const, features: storage },
+      projects: { type: 'FeatureCollection' as const, features: projects },
+      hydrogen: { type: 'FeatureCollection' as const, features: hydrogen },
+      policy: { type: 'FeatureCollection' as const, features: policy },
+      transmission: { type: 'FeatureCollection' as const, features: transmission },
+      resource: { type: 'FeatureCollection' as const, features: resource },
+    }
+  }, [timeWindowDays, activeRegion, activeCountry])
+
+  const counts = useMemo(() => {
+    return Object.entries(filteredGeo).reduce<Record<string, number>>((acc, [key, collection]) => {
+      acc[key] = (collection as any).features.length
+      return acc
+    }, {})
+  }, [filteredGeo])
+
+  const localSummary = useMemo(() => {
+    const highlights = [
+      `Plants: ${counts.plants || 0}`,
+      `Storage: ${counts.storage || 0}`,
+      `Projects: ${counts.projects || 0}`,
+      `H2 hubs: ${counts.hydrogen || 0}`,
+      `Grid lines: ${counts.transmission || 0}`,
+      `Resource tiles: ${counts.resource || 0}`,
+      `Policy events: ${counts.policy || 0}`,
+    ]
+    return `Last ${timeWindowDays === 0 ? 'all-time' : `${timeWindowDays}d`}: ${highlights.join(' · ')}`
+  }, [counts, timeWindowDays])
 
   const statusHighlights = [
     {
@@ -110,10 +612,11 @@ function App() {
   ]
 
   useEffect(() => {
-    if (!liveSectorIntel.find((sector) => sector.slug === activeSector) && liveSectorIntel.length > 0) {
-      setActiveSector(liveSectorIntel[0].slug)
+    const exists = orderedSectors.find((sector) => sector.slug === activeSector)
+    if (!exists && orderedSectors.length > 0) {
+      setActiveSector(orderedSectors[0].slug)
     }
-  }, [activeSector, liveSectorIntel])
+  }, [activeSector, orderedSectors])
 
   useEffect(() => {
     let mounted = true
@@ -133,13 +636,25 @@ function App() {
             const prevBySlug = new Map<string, SectorIntel>()
             prev.forEach((row) => prevBySlug.set(row.slug, row))
 
-            return payload.sectorIntel.map((sector: SectorIntel) => {
+            const merged = new Map<string, SectorIntel>()
+
+            // prefer API entries, but keep finance fallback and ensure EV exists
+            payload.sectorIntel.forEach((sector: SectorIntel) => {
               const backup = prevBySlug.get(sector.slug) || seedSectorIntel.find((s) => s.slug === sector.slug)
-              return {
+              merged.set(sector.slug, {
                 ...sector,
                 finance: sector.finance && sector.finance.length > 0 ? sector.finance : backup?.finance || [],
+              })
+            })
+
+            // fill any missing seeded sectors (e.g., EV) if API skipped them
+            seedSectorIntel.forEach((seed) => {
+              if (!merged.has(seed.slug)) {
+                merged.set(seed.slug, seed)
               }
             })
+
+            return Array.from(merged.values())
           })
         }
 
@@ -166,10 +681,291 @@ function App() {
     }
   }, [])
 
-  const selectedSector = liveSectorIntel.find((sector) => sector.slug === activeSector) || liveSectorIntel[0]
-  const featuredVideo = selectedSector?.youtubeLive
-    ?.map((item) => ({ item, embed: getYouTubeEmbedUrl(item) }))
-    .find((entry) => entry.embed)
+  useEffect(() => {
+    let isMounted = true
+    let mapInstance: any
+
+    const init = async () => {
+      const maplibre = await import('maplibre-gl')
+
+      mapInstance = new maplibre.Map({
+        container: 'globe-map',
+        style: 'https://demotiles.maplibre.org/style.json',
+        center: [10, 25],
+        zoom: 1.5,
+        pitch: 25,
+        bearing: -15,
+        // @ts-ignore projection available at runtime
+        projection: 'globe',
+        minZoom: 1,
+        maxZoom: 8,
+      } as any)
+
+      mapInstance.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'top-right')
+
+      mapInstance.on('load', () => {
+        if (!isMounted) return
+        mapInstance.setFog({
+          color: 'rgba(2,10,7,0.9)',
+          range: [0.8, 10],
+          highColor: '#0f2c1a',
+          spaceColor: '#020807',
+        })
+        mapRef.current = mapInstance
+        setMapReady(true)
+      })
+    }
+
+    void init()
+
+    return () => {
+      isMounted = false
+      if (mapInstance) {
+        mapInstance.remove()
+        mapRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const updateLayers = async () => {
+      if (!mapReady || !mapRef.current) return
+      const map = mapRef.current
+      const maplibre = await import('maplibre-gl')
+
+      const ensureSource = (id: string, data: any) => {
+        const src = map.getSource(id)
+        if (src) {
+          ;(src as any).setData(data)
+        } else {
+          map.addSource(id, { type: 'geojson', data })
+        }
+      }
+
+      const setVisibility = (id: string, visible: boolean) => {
+        if (!map.getLayer(id)) return
+        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none')
+      }
+
+      ensureSource('plants-src', filteredGeo.plants)
+      ensureSource('storage-src', filteredGeo.storage)
+      ensureSource('projects-src', filteredGeo.projects)
+      ensureSource('hydrogen-src', filteredGeo.hydrogen)
+      ensureSource('policy-src', filteredGeo.policy)
+      ensureSource('tx-src', filteredGeo.transmission)
+      ensureSource('resource-src', filteredGeo.resource)
+
+      const pointLayer = (
+        id: string,
+        src: string,
+        colorFallback: string,
+      ) => {
+        if (!map.getLayer(id)) {
+          map.addLayer({
+            id,
+            type: 'circle',
+            source: src,
+            paint: {
+              'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 3, 4, 6, 7, 10],
+              'circle-color': ['coalesce', ['get', 'color'], colorFallback],
+              'circle-stroke-color': '#0b1f13',
+              'circle-stroke-width': 0.8,
+            },
+          })
+
+          map.on('click', id, (e: any) => {
+            const f = e.features?.[0]
+            if (!f) return
+            const p = f.properties || {}
+            new maplibre.Popup({ offset: 12 })
+              .setLngLat(e.lngLat)
+              .setHTML(
+                `<strong>${p.subtype || 'Asset'}</strong><br/>${p.status || ''}<br/>Capacity: ${p.capacityMW || '—'} MW<br/>Owner: ${p.owner || 'N/A'}<br/>Updated: ${p.updatedAt || ''}`,
+              )
+              .addTo(map)
+          })
+        }
+        setVisibility(id, true)
+      }
+
+      pointLayer('plants-layer', 'plants-src', '#8be07f')
+      pointLayer('storage-layer', 'storage-src', '#8be07f')
+      pointLayer('projects-layer', 'projects-src', '#ffd47e')
+      pointLayer('hydrogen-layer', 'hydrogen-src', '#76d1ff')
+      pointLayer('policy-layer', 'policy-src', '#ff9f7a')
+
+      if (!map.getLayer('tx-layer')) {
+        map.addLayer({
+          id: 'tx-layer',
+          type: 'line',
+          source: 'tx-src',
+          paint: {
+            'line-color': '#6fffb0',
+            'line-width': 2,
+            'line-dasharray': [2, 1.3],
+          },
+        })
+      }
+
+      if (!map.getLayer('resource-layer')) {
+        map.addLayer({
+          id: 'resource-layer',
+          type: 'fill',
+          source: 'resource-src',
+          paint: {
+            'fill-color': ['interpolate', ['linear'], ['get', 'value'], 500, '#1b4228', 1500, '#46b165', 2500, '#f5c04d'],
+            'fill-opacity': 0.35,
+            'fill-outline-color': '#2c8a4a',
+          },
+        })
+      }
+
+      setVisibility('plants-layer', layerToggles.plants)
+      setVisibility('storage-layer', layerToggles.storage)
+      setVisibility('projects-layer', layerToggles.projects)
+      setVisibility('hydrogen-layer', layerToggles.hydrogen)
+      setVisibility('policy-layer', layerToggles.policy)
+      setVisibility('tx-layer', layerToggles.transmission)
+      setVisibility('resource-layer', layerToggles.resource)
+    }
+
+    void updateLayers()
+  }, [filteredGeo, layerToggles, mapReady])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchAiDigest = async () => {
+      setAiSummary('Running local AI digest...')
+      try {
+        const response = await fetch('/api/ai/digest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ counts, windowDays: timeWindowDays }),
+        })
+
+        if (!response.ok) throw new Error(`AI endpoint ${response.status}`)
+        const payload = await response.json()
+        if (cancelled) return
+        setAiSummary(payload.summary || localSummary)
+      } catch {
+        if (cancelled) return
+        setAiSummary(localSummary)
+      }
+    }
+
+    void fetchAiDigest()
+    return () => {
+      cancelled = true
+    }
+  }, [counts, localSummary, timeWindowDays])
+
+  const selectedSector = orderedSectors.find((sector) => sector.slug === activeSector) || orderedSectors[0]
+
+  const filteredSector = selectedSector
+    ? {
+        ...selectedSector,
+        latestNews: filterByRegion(selectedSector.latestNews, activeRegion, activeCountry),
+        techNews: filterByRegion(selectedSector.techNews, activeRegion, activeCountry),
+        products: filterByRegion(selectedSector.products, activeRegion, activeCountry),
+        startups: filterByRegion(selectedSector.startups, activeRegion, activeCountry),
+        finance: filterByRegion(selectedSector.finance, activeRegion, activeCountry),
+        youtubeLive: filterByRegion(selectedSector.youtubeLive, activeRegion, activeCountry),
+        community: filterByRegion(selectedSector.community, activeRegion, activeCountry),
+      }
+    : undefined
+
+  const featuredVideo = useMemo(() => {
+    const fallback = {
+      item: {
+        title: 'Energy markets live',
+        source: 'Reuters Live',
+        url: 'https://www.youtube.com/@Reuters/live',
+      },
+      embed: 'https://www.youtube.com/embed/live_stream?channel=UChqUTb7kYRX8-EiaN3XFrSQ',
+      index: -1,
+    }
+
+    if (!filteredSector || filteredSector.youtubeLive.length === 0) return fallback
+    const idx = streamSelections[filteredSector.slug] ?? 0
+    const safeIdx = Math.min(idx, filteredSector.youtubeLive.length - 1)
+    const item = filteredSector.youtubeLive[safeIdx]
+    const embed = getYouTubeEmbedUrl(item)
+    return embed ? { item, embed, index: safeIdx } : fallback
+  }, [filteredSector, streamSelections])
+
+  const flyToCoords = (lat: number, lon: number, zoom = 4.2) => {
+    if (!mapRef.current) return
+    mapRef.current.flyTo({ center: [lon, lat], zoom, speed: 0.8, essential: true })
+  }
+
+  const runSearch = async (term: string) => {
+    if (!term) return
+    setSearchStatus(`Searching “${term}”...`)
+    try {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(term)}`)
+      if (!response.ok) throw new Error(`Search ${response.status}`)
+      const payload = await response.json()
+      const results = payload?.results || []
+      if (!results.length) {
+        setSearchStatus('No matches found')
+        return
+      }
+      const top = results[0]
+      if (Array.isArray(top.coords) && top.coords.length === 2) {
+        flyToCoords(top.coords[0], top.coords[1])
+      }
+      setSearchStatus(`Centered on ${top.title} (${top.layer})`)
+    } catch {
+      setSearchStatus('Search unavailable; check API')
+    }
+  }
+
+  const applyCommand = () => {
+    const parts = mapCommand.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (parts.length === 0) return
+
+    setSearchStatus('')
+
+    if (parts[0] === 'find' || parts[0] === 'search') {
+      const term = mapCommand.replace(/^(find|search)\s*/i, '').trim()
+      if (term) void runSearch(term)
+      setMapCommand('')
+      return
+    }
+
+    const nextToggles = { ...layerToggles }
+    for (let i = 0; i < parts.length; i += 1) {
+      const token = parts[i]
+      if (token === 'time' && parts[i + 1]) {
+        const n = Number(parts[i + 1])
+        if (!Number.isNaN(n)) setTimeWindowDays(Math.max(0, n))
+      }
+      if (token === 'all') {
+        setTimeWindowDays(0)
+      }
+      const mapTokenToLayer: Record<string, LayerKey> = {
+        plants: 'plants',
+        storage: 'storage',
+        projects: 'projects',
+        hydrogen: 'hydrogen',
+        h2: 'hydrogen',
+        grid: 'transmission',
+        transmission: 'transmission',
+        resource: 'resource',
+        policy: 'policy',
+      }
+      const layerKey = mapTokenToLayer[token]
+      if (layerKey) {
+        nextToggles[layerKey] = true
+      }
+      if (token === 'hide' && parts[i + 1]) {
+        const hideKey = mapTokenToLayer[parts[i + 1]]
+        if (hideKey) nextToggles[hideKey] = false
+      }
+    }
+    setLayerToggles(nextToggles)
+  }
 
   return (
     <div className="dashboard-shell">
@@ -199,6 +995,122 @@ function App() {
             {item}
           </span>
         ))}
+      </section>
+
+      <section className="panel flux-panel">
+        <div className="panel-header">
+          <h3>Globe Monitor • MapLibre</h3>
+          <span>3D globe with energy layers, time filter, command palette</span>
+        </div>
+        <div className="globe-controls">
+          <div className="layer-switches">
+            {(
+              [
+                'plants',
+                'storage',
+                'projects',
+                'hydrogen',
+                'transmission',
+                'resource',
+                'policy',
+              ] as LayerKey[]
+            ).map((key) => (
+              <label key={key} className="layer-toggle">
+                <input
+                  type="checkbox"
+                  checked={layerToggles[key]}
+                  onChange={(e) => setLayerToggles((prev) => ({ ...prev, [key]: e.target.checked }))}
+                />
+                <span>
+                  {layerLabels[key]}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="time-filter">
+            <div className="time-buttons">
+              {timePresets.map((preset) => (
+                <button
+                  key={preset.label}
+                  className={timeWindowDays === preset.days ? 'active' : ''}
+                  onClick={() => setTimeWindowDays(preset.days)}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <label className="slider-row">
+              <span>Custom days: {timeWindowDays}</span>
+              <input
+                type="range"
+                min={0}
+                max={60}
+                value={timeWindowDays}
+                onChange={(e) => setTimeWindowDays(Number(e.target.value))}
+              />
+            </label>
+          </div>
+          <div className="command-bar">
+            <input
+              value={mapCommand}
+              onChange={(e) => setMapCommand(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyCommand()
+              }}
+              placeholder="Command palette: e.g. 'time 7 projects hydrogen', 'hide transmission', 'find Surya'"
+            />
+            <button type="button" onClick={applyCommand}>
+              Run
+            </button>
+            {searchStatus && <span className="command-hint">{searchStatus}</span>}
+          </div>
+          <div className="ai-panel">
+            <p className="ai-label">AI Delta Digest</p>
+            <p className="ai-copy">{aiSummary}</p>
+          </div>
+        </div>
+        <div className="flux-map" aria-label="World map with energy layers">
+          <div id="globe-map" />
+        </div>
+        <div className="flux-legend">
+          {Object.entries(sectorColors).map(([sector, color]) => (
+            <div key={sector} className="legend-item">
+              <span className="legend-dot" style={{ background: color }} /> {sector}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel region-panel">
+        <div className="panel-header">
+          <h3>Region Focus</h3>
+          <span>Select a macro region and/or country</span>
+        </div>
+        <div className="region-controls">
+          <label className="region-field">
+            <span>Region</span>
+            <select value={activeRegion} onChange={(e) => setActiveRegion(e.target.value as Region)}>
+              {macroRegions.map((region) => (
+                <option key={region} value={region}>
+                  {region}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="region-field">
+            <span>Country</span>
+            <select value={activeCountry} onChange={(e) => setActiveCountry(e.target.value as Region | 'All')}>
+              <option value="All">All</option>
+              {countryRegions.map((country) => (
+                <option key={country} value={country}>
+                  {country}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="region-note">Filters apply live to every container. If none selected, Global shows all.</p>
       </section>
 
       <section className="status-grid panel">
@@ -349,7 +1261,7 @@ function App() {
 
       <section className="sector-stack panel">
         <div className="sector-tabs" role="tablist" aria-label="Energy technology tabs">
-          {liveSectorIntel.map((sector) => (
+          {orderedSectors.map((sector) => (
             <button
               key={sector.slug}
               className={`sector-tab ${activeSector === sector.slug ? 'active' : ''}`}
@@ -363,97 +1275,117 @@ function App() {
           ))}
         </div>
 
-        {selectedSector && (
-          <article key={selectedSector.slug} className="sector-panel">
+        {filteredSector && (
+          <article key={filteredSector.slug} className="sector-panel">
             <div className="sector-header">
               <div>
-                <p className="sector-label">{selectedSector.slug}</p>
-                <h3>{selectedSector.headline}</h3>
+                <p className="sector-label">{filteredSector.slug}</p>
+                <h3>{filteredSector.headline}</h3>
               </div>
-              <p>{selectedSector.summary}</p>
+              <p>{filteredSector.summary}</p>
             </div>
 
             <div className="sector-grid">
               <section className="sector-card">
                 <h4>Latest News</h4>
-                <ul>
-                  {selectedSector.latestNews.map((item) => (
-                    <li key={item.title}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        {item.title}
-                      </a>
-                      <span>
-                        {item.source} • {item.time}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                {filteredSector.latestNews.length === 0 ? (
+                  <p className="empty">No items for this selection.</p>
+                ) : (
+                  <ul>
+                    {filteredSector.latestNews.map((item) => (
+                      <li key={item.title}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          {item.title}
+                        </a>
+                        <span>
+                          {item.source} • {item.time}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               <section className="sector-card">
                 <h4>Tech News</h4>
-                <ul>
-                  {selectedSector.techNews.map((item) => (
-                    <li key={item.title}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        {item.title}
-                      </a>
-                      <span>
-                        {item.source} • {item.time}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                {filteredSector.techNews.length === 0 ? (
+                  <p className="empty">No items for this selection.</p>
+                ) : (
+                  <ul>
+                    {filteredSector.techNews.map((item) => (
+                      <li key={item.title}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          {item.title}
+                        </a>
+                        <span>
+                          {item.source} • {item.time}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               <section className="sector-card">
                 <h4>New Products</h4>
-                <ul>
-                  {selectedSector.products.map((item) => (
-                    <li key={item.name}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        {item.name} — {item.company}
-                      </a>
-                      <span>
-                        {item.status} • {item.summary}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                {filteredSector.products.length === 0 ? (
+                  <p className="empty">No items for this selection.</p>
+                ) : (
+                  <ul>
+                    {filteredSector.products.map((item) => (
+                      <li key={item.name}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          {item.name} — {item.company}
+                        </a>
+                        <span>
+                          {item.status} • {item.summary}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               <section className="sector-card">
                 <h4>Startup Radar</h4>
-                <ul>
-                  {selectedSector.startups.map((item) => (
-                    <li key={item.name}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        {item.name} ({item.region})
-                      </a>
-                      <span>
-                        {item.event} • {item.value}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                {filteredSector.startups.length === 0 ? (
+                  <p className="empty">No items for this selection.</p>
+                ) : (
+                  <ul>
+                    {filteredSector.startups.map((item) => (
+                      <li key={item.name}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          {item.name} ({item.region})
+                        </a>
+                        <span>
+                          {item.event} • {item.value}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               <section className="sector-card finance-card">
                 <h4>Finance & Stocks</h4>
-                <ul className="finance-list">
-                  {selectedSector.finance.map((item) => (
-                    <li key={item.metric} className="finance-row">
-                      <div className="finance-meta">
-                        <p className="finance-label">{item.metric}</p>
-                        <div className="finance-price">
-                          <strong>{item.value}</strong>
-                          <span className={`pill ${item.trend}`}>{item.move}</span>
+                {filteredSector.finance.length === 0 ? (
+                  <p className="empty">No items for this selection.</p>
+                ) : (
+                  <ul className="finance-list">
+                    {filteredSector.finance.map((item) => (
+                      <li key={item.metric} className="finance-row">
+                        <div className="finance-meta">
+                          <p className="finance-label">{item.metric}</p>
+                          <div className="finance-price">
+                            <strong>{item.value}</strong>
+                            <span className={`pill ${item.trend}`}>{item.move}</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="finance-chart">{renderSparkline(item.history)}</div>
-                    </li>
-                  ))}
-                </ul>
+                        <div className="finance-chart">{renderSparkline(item.history)}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
 
               <section className="sector-card sector-card-video">
@@ -462,7 +1394,7 @@ function App() {
                   <div className="video-wrap">
                     <iframe
                       src={featuredVideo.embed}
-                      title={`${selectedSector.slug} live video`}
+                      title={`${filteredSector.slug} live video`}
                       loading="lazy"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       referrerPolicy="strict-origin-when-cross-origin"
@@ -472,32 +1404,77 @@ function App() {
                 ) : (
                   <p className="video-fallback">No embeddable stream in current feed. Use links below.</p>
                 )}
-                <ul>
-                  {selectedSector.youtubeLive.map((item) => (
-                    <li key={item.title}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        {item.title}
-                      </a>
-                      <span>
-                        {item.source} • {item.time}
-                      </span>
-                    </li>
+                {filteredSector.youtubeLive.length > 1 && (
+                  <div className="stream-switch">
+                    {filteredSector.youtubeLive.map((item, idx) => (
+                      <button
+                        key={`${item.title}-${idx}`}
+                        className={featuredVideo?.index === idx ? 'active' : ''}
+                        onClick={() =>
+                          setStreamSelections((prev) => ({
+                            ...prev,
+                            [filteredSector.slug]: idx,
+                          }))
+                        }
+                        type="button"
+                      >
+                        {item.source || `Stream ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {filteredSector.youtubeLive.length === 0 ? (
+                  <p className="empty">No streams for this selection.</p>
+                ) : (
+                  <ul>
+                    {filteredSector.youtubeLive.map((item) => (
+                      <li key={item.title}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          {item.title}
+                        </a>
+                        <span>
+                          {item.source} • {item.time}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                </section>
+
+              <section className="sector-card heat-card">
+                <h4>Regional Heat</h4>
+                <div className="heat-grid">
+                  {(regionHeat[activeRegion] || regionHeat.Global).map((row) => (
+                    <div key={`${row.region}-${row.metric}`} className="heat-row">
+                      <div className="heat-head">
+                        <span className="heat-label">{row.region}</span>
+                        <span className="heat-score">{row.score}</span>
+                      </div>
+                      <div className="heat-bar">
+                        <span style={{ width: `${Math.min(row.score, 100)}%` }} />
+                      </div>
+                      <p className="heat-meta">{row.metric}</p>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </section>
 
               <section className="sector-card">
                 <h4>Reddit & GitHub Topics</h4>
-                <ul>
-                  {selectedSector.community.map((item) => (
-                    <li key={`${item.platform}-${item.topic}`}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        [{item.platform}] {item.topic}
-                      </a>
-                      <span>{item.activity}</span>
-                    </li>
-                  ))}
-                </ul>
+                {filteredSector.community.length === 0 ? (
+                  <p className="empty">No items for this selection.</p>
+                ) : (
+                  <ul>
+                    {filteredSector.community.map((item) => (
+                      <li key={`${item.platform}-${item.topic}`}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          [{item.platform}] {item.topic}
+                        </a>
+                        <span>{item.activity}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
             </div>
           </article>
