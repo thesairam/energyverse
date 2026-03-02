@@ -521,12 +521,7 @@ const layerLabels: Record<LayerKey, string> = {
   topics: 'Intel Topics',
 }
 
-const timePresets = [
-  { label: '24h', days: 1 },
-  { label: '7d', days: 7 },
-  { label: '30d', days: 30 },
-  { label: 'All', days: 0 },
-]
+const MAX_TOPIC_FEATURES = 80
 
 function App() {
   const lastUpdated = useMemo(() => new Date().toUTCString(), [])
@@ -553,31 +548,21 @@ function App() {
     { label: 'GitHub Repo', href: 'https://github.com/thesairam/energyverse' },
     { label: 'Discussions #1', href: 'https://github.com/thesairam/energyverse/discussions/1' },
   ]
-  const [timeWindowDays, setTimeWindowDays] = useState<number>(7)
+  const timeWindowDays: number = 7
   const [layerToggles, setLayerToggles] = useState<Record<LayerKey, boolean>>({
     plants: true,
     storage: true,
     projects: true,
-    hydrogen: true,
-    transmission: true,
-    resource: true,
+    hydrogen: false,
+    transmission: false,
+    resource: false,
     policy: true,
-    topics: true,
+    topics: false,
   })
-  const [sectorToggles, setSectorToggles] = useState<Record<SectorIntel['slug'], boolean>>({
-    Solar: true,
-    Wind: true,
-    Hydro: true,
-    Geothermal: true,
-    Storage: true,
-    Nuclear: true,
-    EV: true,
-  })
-  const [mapCommand, setMapCommand] = useState('')
   const [mapReady, setMapReady] = useState(false)
+  const [mapError, setMapError] = useState<string | null>(null)
   const [streamSelections, setStreamSelections] = useState<Record<string, number>>({})
   const [aiSummary, setAiSummary] = useState('Collecting map signals...')
-  const [searchStatus, setSearchStatus] = useState('')
   const mapRef = useRef<null | any>(null)
 
   const filteredGeo = useMemo(() => {
@@ -585,8 +570,6 @@ function App() {
     const inWindow = (dt: string) => (cutoff === 0 ? true : new Date(dt).getTime() >= cutoff)
 
     const regionFilter = (tag?: Region | string) => regionMatch(tag, activeRegion, activeCountry)
-    const sectorFilter = (sector: SectorIntel['slug']) => sectorToggles[sector] !== false
-
     const pointToFeature = (item: BasePoint) => ({
       type: 'Feature' as const,
       geometry: { type: 'Point' as const, coordinates: [item.coords[1], item.coords[0]] },
@@ -603,25 +586,23 @@ function App() {
     })
 
     const plants = layerData.plants
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
     const storage = layerData.storage
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
     const projects = layerData.projects
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
     const hydrogen = layerData.hydrogen
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
     const policy = layerData.policy
-      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag) && sectorFilter(p.sector))
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
 
     const topicsRaw: BasePoint[] = []
     liveSectorIntel.forEach((sector) => {
-      if (!sectorFilter(sector.slug)) return
-
       const appendTopic = (
         category: string,
         idx: number,
@@ -629,6 +610,7 @@ function App() {
         source: string,
         region?: string | Region,
       ) => {
+        if (topicsRaw.length >= MAX_TOPIC_FEATURES) return
         const normalized = normalizeRegionLabel(region)
         if (!regionMatch(normalized, activeRegion, activeCountry)) return
         topicsRaw.push({
@@ -647,14 +629,9 @@ function App() {
       sector.techNews.forEach((item, idx) => appendTopic('Tech', idx + 20, item.title, item.source, item.region))
       sector.products.forEach((item, idx) => appendTopic('Product', idx + 40, item.name, item.company, item.region))
       sector.startups.forEach((item, idx) => appendTopic('Startup', idx + 60, item.name, item.name, item.geography || item.region))
-      sector.finance.forEach((item, idx) => appendTopic('Finance', idx + 80, item.metric, sector.slug, item.region))
-      sector.youtubeLive.forEach((item, idx) => appendTopic('Live', idx + 100, item.title, item.source, item.region))
-      sector.community.forEach((item, idx) => appendTopic(item.platform, idx + 120, item.topic, item.platform, item.region))
     })
 
-    const topics = topicsRaw
-      .filter((p) => inWindow(p.updatedAt) && sectorFilter(p.sector))
-      .map(pointToFeature)
+    const topics = topicsRaw.filter((p) => inWindow(p.updatedAt)).map(pointToFeature)
 
     const transmission = layerData.transmission
       .filter((t) => inWindow(t.updatedAt))
@@ -693,7 +670,7 @@ function App() {
       transmission: { type: 'FeatureCollection' as const, features: transmission },
       resource: { type: 'FeatureCollection' as const, features: resource },
     }
-  }, [timeWindowDays, activeRegion, activeCountry, liveSectorIntel, sectorToggles])
+  }, [timeWindowDays, activeRegion, activeCountry, liveSectorIntel])
 
   const counts = useMemo(() => {
     return Object.entries(filteredGeo).reduce<Record<string, number>>((acc, [key, collection]) => {
@@ -812,34 +789,43 @@ function App() {
     let mapInstance: any
 
     const init = async () => {
-      const maplibre = await import('maplibre-gl')
+      try {
+        const container = document.getElementById('globe-map')
+        if (!container) return
 
-      mapInstance = new maplibre.Map({
-        container: 'globe-map',
-        style: globeBaseStyle as any,
-        center: [10, 25],
-        zoom: 1.5,
-        pitch: 25,
-        bearing: -15,
-        // @ts-ignore projection available at runtime
-        projection: 'globe',
-        minZoom: 1,
-        maxZoom: 8,
-      } as any)
+        const maplibre = await import('maplibre-gl')
 
-      mapInstance.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'top-right')
+        mapInstance = new maplibre.Map({
+          container,
+          style: globeBaseStyle as any,
+          center: [10, 18],
+          zoom: 1.2,
+          pitch: 0,
+          bearing: 0,
+          // @ts-ignore projection available at runtime
+          projection: 'mercator',
+          minZoom: 1,
+          maxZoom: 6,
+          antialias: false,
+        } as any)
 
-      mapInstance.on('load', () => {
-        if (!isMounted) return
-        mapInstance.setFog({
-          color: 'rgba(2,10,7,0.9)',
-          range: [0.8, 10],
-          highColor: '#0f2c1a',
-          spaceColor: '#020807',
+        mapInstance.addControl(new maplibre.NavigationControl({ visualizePitch: false }), 'top-right')
+
+        mapInstance.on('load', () => {
+          if (!isMounted) return
+          mapRef.current = mapInstance
+          setMapReady(true)
+          setMapError(null)
         })
-        mapRef.current = mapInstance
-        setMapReady(true)
-      })
+
+        mapInstance.on('error', () => {
+          if (!isMounted) return
+          setMapError('Map rendering degraded. Showing minimal mode.')
+        })
+      } catch {
+        if (!isMounted) return
+        setMapError('Map failed to initialize. Try refreshing or lowering browser GPU usage.')
+      }
     }
 
     void init()
@@ -857,7 +843,6 @@ function App() {
     const updateLayers = async () => {
       if (!mapReady || !mapRef.current) return
       const map = mapRef.current
-      const maplibre = await import('maplibre-gl')
 
       const ensureSource = (id: string, data: any) => {
         const src = map.getSource(id)
@@ -899,18 +884,6 @@ function App() {
               'circle-stroke-width': 1.25,
               'circle-opacity': 0.96,
             },
-          })
-
-          map.on('click', id, (e: any) => {
-            const f = e.features?.[0]
-            if (!f) return
-            const p = f.properties || {}
-            new maplibre.Popup({ offset: 12 })
-              .setLngLat(e.lngLat)
-              .setHTML(
-                `<strong>${p.subtype || 'Asset'}</strong><br/>${p.status || ''}<br/>Capacity: ${p.capacityMW || '—'} MW<br/>Owner: ${p.owner || 'N/A'}<br/>Updated: ${p.updatedAt || ''}`,
-              )
-              .addTo(map)
           })
         }
         setVisibility(id, true)
@@ -1024,98 +997,6 @@ function App() {
     return embed ? { item, embed, index: safeIdx } : fallback
   }, [filteredSector, streamSelections])
 
-  const flyToCoords = (lat: number, lon: number, zoom = 4.2) => {
-    if (!mapRef.current) return
-    mapRef.current.flyTo({ center: [lon, lat], zoom, speed: 0.8, essential: true })
-  }
-
-  const runSearch = async (term: string) => {
-    if (!term) return
-    setSearchStatus(`Searching “${term}”...`)
-    try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(term)}`)
-      if (!response.ok) throw new Error(`Search ${response.status}`)
-      const payload = await response.json()
-      const results = payload?.results || []
-      if (!results.length) {
-        setSearchStatus('No matches found')
-        return
-      }
-      const top = results[0]
-      if (Array.isArray(top.coords) && top.coords.length === 2) {
-        flyToCoords(top.coords[0], top.coords[1])
-      }
-      setSearchStatus(`Centered on ${top.title} (${top.layer})`)
-    } catch {
-      setSearchStatus('Search unavailable; check API')
-    }
-  }
-
-  const applyCommand = () => {
-    const parts = mapCommand.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    if (parts.length === 0) return
-
-    setSearchStatus('')
-
-    if (parts[0] === 'find' || parts[0] === 'search') {
-      const term = mapCommand.replace(/^(find|search)\s*/i, '').trim()
-      if (term) void runSearch(term)
-      setMapCommand('')
-      return
-    }
-
-    const nextToggles = { ...layerToggles }
-    const nextSectorToggles = { ...sectorToggles }
-    for (let i = 0; i < parts.length; i += 1) {
-      const token = parts[i]
-      if (token === 'time' && parts[i + 1]) {
-        const n = Number(parts[i + 1])
-        if (!Number.isNaN(n)) setTimeWindowDays(Math.max(0, n))
-      }
-      if (token === 'all') {
-        setTimeWindowDays(0)
-      }
-      const mapTokenToLayer: Record<string, LayerKey> = {
-        plants: 'plants',
-        storage: 'storage',
-        projects: 'projects',
-        hydrogen: 'hydrogen',
-        h2: 'hydrogen',
-        grid: 'transmission',
-        transmission: 'transmission',
-        resource: 'resource',
-        policy: 'policy',
-        topic: 'topics',
-        topics: 'topics',
-      }
-      const mapTokenToSector: Record<string, SectorIntel['slug']> = {
-        solar: 'Solar',
-        wind: 'Wind',
-        hydro: 'Hydro',
-        geothermal: 'Geothermal',
-        storage: 'Storage',
-        nuclear: 'Nuclear',
-        ev: 'EV',
-      }
-      const layerKey = mapTokenToLayer[token]
-      if (layerKey) {
-        nextToggles[layerKey] = true
-      }
-      const sectorKey = mapTokenToSector[token]
-      if (sectorKey) {
-        nextSectorToggles[sectorKey] = true
-      }
-      if (token === 'hide' && parts[i + 1]) {
-        const hideKey = mapTokenToLayer[parts[i + 1]]
-        if (hideKey) nextToggles[hideKey] = false
-        const hideSectorKey = mapTokenToSector[parts[i + 1]]
-        if (hideSectorKey) nextSectorToggles[hideSectorKey] = false
-      }
-    }
-    setLayerToggles(nextToggles)
-    setSectorToggles(nextSectorToggles)
-  }
-
   return (
     <div className="dashboard-shell">
       <header className="topbar panel">
@@ -1149,7 +1030,7 @@ function App() {
       <section className="panel flux-panel">
         <div className="panel-header">
           <h3>Globe Monitor • MapLibre</h3>
-          <span>3D globe with energy layers, time filter, command palette</span>
+          <span>Lite mode for stability: fewer controls and lower GPU load</span>
         </div>
         <div className="globe-controls">
           <div className="layer-switches">
@@ -1159,9 +1040,6 @@ function App() {
                 'storage',
                 'projects',
                 'hydrogen',
-                'topics',
-                'transmission',
-                'resource',
                 'policy',
               ] as LayerKey[]
             ).map((key) => (
@@ -1177,56 +1055,7 @@ function App() {
               </label>
             ))}
           </div>
-          <div className="layer-switches">
-            {sectorOrder.map((sector) => (
-              <label key={sector} className="layer-toggle">
-                <input
-                  type="checkbox"
-                  checked={sectorToggles[sector]}
-                  onChange={(e) => setSectorToggles((prev) => ({ ...prev, [sector]: e.target.checked }))}
-                />
-                <span>{sector}</span>
-              </label>
-            ))}
-          </div>
-          <div className="time-filter">
-            <div className="time-buttons">
-              {timePresets.map((preset) => (
-                <button
-                  key={preset.label}
-                  className={timeWindowDays === preset.days ? 'active' : ''}
-                  onClick={() => setTimeWindowDays(preset.days)}
-                  type="button"
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <label className="slider-row">
-              <span>Custom days: {timeWindowDays}</span>
-              <input
-                type="range"
-                min={0}
-                max={60}
-                value={timeWindowDays}
-                onChange={(e) => setTimeWindowDays(Number(e.target.value))}
-              />
-            </label>
-          </div>
-          <div className="command-bar">
-            <input
-              value={mapCommand}
-              onChange={(e) => setMapCommand(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyCommand()
-              }}
-              placeholder="Command: 'time 7 topics solar', 'hide wind', 'hide transmission', 'find Surya'"
-            />
-            <button type="button" onClick={applyCommand}>
-              Run
-            </button>
-            {searchStatus && <span className="command-hint">{searchStatus}</span>}
-          </div>
+          {mapError && <p className="region-note">{mapError}</p>}
           <div className="ai-panel">
             <p className="ai-label">AI Delta Digest</p>
             <p className="ai-copy">{aiSummary}</p>
