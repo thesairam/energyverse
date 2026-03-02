@@ -10,10 +10,8 @@ import {
   emissions,
   kpis,
   marketRows,
-  newsTape as seedNewsTape,
   policies,
   projectChanges,
-  sectorIntel as seedSectorIntel,
 } from './data/energyData'
 
 const getYouTubeEmbedUrl = (item: LinkItem) => {
@@ -252,13 +250,30 @@ const sectorColors: Record<SectorIntel['slug'], string> = {
 
 const globeBaseStyle = {
   version: 8,
-  sources: {},
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
   layers: [
     {
       id: 'background',
       type: 'background',
       paint: {
-        'background-color': '#07130b',
+        'background-color': '#050d09',
+      },
+    },
+    {
+      id: 'osm-base',
+      type: 'raster',
+      source: 'osm',
+      paint: {
+        'raster-opacity': 0.72,
+        'raster-saturation': -0.45,
+        'raster-brightness-max': 0.75,
       },
     },
   ],
@@ -527,8 +542,8 @@ function App() {
   const lastUpdated = useMemo(() => new Date().toUTCString(), [])
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<string | null>(null)
   const [apiStatus, setApiStatus] = useState<'online' | 'offline'>('offline')
-  const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>(seedNewsTape)
-  const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>(seedSectorIntel)
+  const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>([])
+  const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>([])
   const [activeSector, setActiveSector] = useState<SectorIntel['slug']>('Storage')
   const [activeRegion, setActiveRegion] = useState<Region>('Global')
   const [activeCountry, setActiveCountry] = useState<Region | 'All'>('All')
@@ -697,7 +712,7 @@ function App() {
     {
       label: 'Data Bridge',
       value: apiStatus === 'online' ? 'Streaming' : 'Offline',
-      hint: apiStatus === 'online' ? 'Live ingest + cache' : 'Falling back to seeded data',
+      hint: apiStatus === 'online' ? 'Live ingest + cache' : 'Live API unavailable',
       tone: apiStatus,
     },
     {
@@ -734,36 +749,12 @@ function App() {
         const payload = await response.json()
         if (!mounted) return
 
-        if (Array.isArray(payload.sectorIntel) && payload.sectorIntel.length > 0) {
-          setLiveSectorIntel((prev) => {
-            const prevBySlug = new Map<string, SectorIntel>()
-            prev.forEach((row) => prevBySlug.set(row.slug, row))
-
-            const merged = new Map<string, SectorIntel>()
-
-            // prefer API entries, but keep finance fallback and ensure EV exists
-            payload.sectorIntel.forEach((sector: SectorIntel) => {
-              const backup = prevBySlug.get(sector.slug) || seedSectorIntel.find((s) => s.slug === sector.slug)
-              merged.set(sector.slug, {
-                ...sector,
-                finance: sector.finance && sector.finance.length > 0 ? sector.finance : backup?.finance || [],
-              })
-            })
-
-            // fill any missing seeded sectors (e.g., EV) if API skipped them
-            seedSectorIntel.forEach((seed) => {
-              if (!merged.has(seed.slug)) {
-                merged.set(seed.slug, seed)
-              }
-            })
-
-            return Array.from(merged.values())
-          })
-        }
-
-        if (Array.isArray(payload.newsTape) && payload.newsTape.length > 0) {
-          setLiveNewsTape(payload.newsTape)
-        }
+        setLiveSectorIntel((prev) =>
+          Array.isArray(payload.sectorIntel) && payload.sectorIntel.length > 0 ? payload.sectorIntel : prev,
+        )
+        setLiveNewsTape((prev) =>
+          Array.isArray(payload.newsTape) && payload.newsTape.length > 0 ? payload.newsTape : prev,
+        )
 
         setLiveUpdatedAt(typeof payload.updatedAt === 'string' ? payload.updatedAt : null)
         setApiStatus('online')
@@ -807,6 +798,9 @@ function App() {
           minZoom: 1,
           maxZoom: 6,
           antialias: false,
+          dragRotate: false,
+          touchPitch: false,
+          renderWorldCopies: false,
         } as any)
 
         mapInstance.addControl(new maplibre.NavigationControl({ visualizePitch: false }), 'top-right')
@@ -840,7 +834,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const updateLayers = async () => {
+    const updateLayers = () => {
       if (!mapReady || !mapRef.current) return
       const map = mapRef.current
 
@@ -858,14 +852,20 @@ function App() {
         map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none')
       }
 
-      ensureSource('plants-src', filteredGeo.plants)
-      ensureSource('storage-src', filteredGeo.storage)
-      ensureSource('projects-src', filteredGeo.projects)
-      ensureSource('hydrogen-src', filteredGeo.hydrogen)
-      ensureSource('policy-src', filteredGeo.policy)
-      ensureSource('topics-src', filteredGeo.topics)
-      ensureSource('tx-src', filteredGeo.transmission)
-      ensureSource('resource-src', filteredGeo.resource)
+      const ensureSourceIfVisible = (id: string, data: any, enabled: boolean) => {
+        if (enabled || map.getSource(id)) {
+          ensureSource(id, data)
+        }
+      }
+
+      ensureSourceIfVisible('plants-src', filteredGeo.plants, layerToggles.plants)
+      ensureSourceIfVisible('storage-src', filteredGeo.storage, layerToggles.storage)
+      ensureSourceIfVisible('projects-src', filteredGeo.projects, layerToggles.projects)
+      ensureSourceIfVisible('hydrogen-src', filteredGeo.hydrogen, layerToggles.hydrogen)
+      ensureSourceIfVisible('policy-src', filteredGeo.policy, layerToggles.policy)
+      ensureSourceIfVisible('topics-src', filteredGeo.topics, layerToggles.topics)
+      ensureSourceIfVisible('tx-src', filteredGeo.transmission, layerToggles.transmission)
+      ensureSourceIfVisible('resource-src', filteredGeo.resource, layerToggles.resource)
 
       const pointLayer = (
         id: string,
@@ -889,14 +889,14 @@ function App() {
         setVisibility(id, true)
       }
 
-      pointLayer('plants-layer', 'plants-src', '#8be07f')
-      pointLayer('storage-layer', 'storage-src', '#8be07f')
-      pointLayer('projects-layer', 'projects-src', '#ffd47e')
-      pointLayer('hydrogen-layer', 'hydrogen-src', '#76d1ff')
-      pointLayer('policy-layer', 'policy-src', '#ff9f7a')
-      pointLayer('topics-layer', 'topics-src', '#a0e0ff')
+      if (layerToggles.plants || map.getLayer('plants-layer')) pointLayer('plants-layer', 'plants-src', '#8be07f')
+      if (layerToggles.storage || map.getLayer('storage-layer')) pointLayer('storage-layer', 'storage-src', '#8be07f')
+      if (layerToggles.projects || map.getLayer('projects-layer')) pointLayer('projects-layer', 'projects-src', '#ffd47e')
+      if (layerToggles.hydrogen || map.getLayer('hydrogen-layer')) pointLayer('hydrogen-layer', 'hydrogen-src', '#76d1ff')
+      if (layerToggles.policy || map.getLayer('policy-layer')) pointLayer('policy-layer', 'policy-src', '#ff9f7a')
+      if (layerToggles.topics || map.getLayer('topics-layer')) pointLayer('topics-layer', 'topics-src', '#a0e0ff')
 
-      if (!map.getLayer('tx-layer')) {
+      if ((layerToggles.transmission || map.getLayer('tx-layer')) && !map.getLayer('tx-layer')) {
         map.addLayer({
           id: 'tx-layer',
           type: 'line',
@@ -909,7 +909,7 @@ function App() {
         })
       }
 
-      if (!map.getLayer('resource-layer')) {
+      if ((layerToggles.resource || map.getLayer('resource-layer')) && !map.getLayer('resource-layer')) {
         map.addLayer({
           id: 'resource-layer',
           type: 'fill',
@@ -932,7 +932,7 @@ function App() {
       setVisibility('resource-layer', layerToggles.resource)
     }
 
-    void updateLayers()
+    updateLayers()
   }, [filteredGeo, layerToggles, mapReady])
 
   useEffect(() => {
@@ -968,15 +968,48 @@ function App() {
   const filteredSector = selectedSector
     ? {
         ...selectedSector,
-        latestNews: filterByRegion(selectedSector.latestNews, activeRegion, activeCountry),
-        techNews: filterByRegion(selectedSector.techNews, activeRegion, activeCountry),
+        latestNews: (() => {
+          const rows = filterByRegion(selectedSector.latestNews, activeRegion, activeCountry)
+          return rows.length > 0 ? rows : selectedSector.latestNews.slice(0, 3)
+        })(),
+        techNews: (() => {
+          const rows = filterByRegion(selectedSector.techNews, activeRegion, activeCountry)
+          return rows.length > 0 ? rows : selectedSector.techNews.slice(0, 3)
+        })(),
         products: filterByRegion(selectedSector.products, activeRegion, activeCountry),
         startups: filterByRegion(selectedSector.startups, activeRegion, activeCountry),
-        finance: filterByRegion(selectedSector.finance, activeRegion, activeCountry),
+        finance: (() => {
+          const rows = filterByRegion(selectedSector.finance, activeRegion, activeCountry)
+          const scoped = rows.length > 0 ? rows : selectedSector.finance
+          return [...scoped]
+            .sort((a, b) => {
+              const moveA = Number((a.move || '').replace(/[^0-9.-]/g, ''))
+              const moveB = Number((b.move || '').replace(/[^0-9.-]/g, ''))
+              const absA = Number.isFinite(moveA) ? Math.abs(moveA) : 0
+              const absB = Number.isFinite(moveB) ? Math.abs(moveB) : 0
+              return absB - absA
+            })
+            .slice(0, 5)
+        })(),
         youtubeLive: filterByRegion(selectedSector.youtubeLive, activeRegion, activeCountry),
         community: filterByRegion(selectedSector.community, activeRegion, activeCountry),
       }
     : undefined
+
+  const fallbackNewsTape = useMemo(() => {
+    const rows = liveSectorIntel.flatMap((sector) => {
+      const recent = [...(sector.latestNews || []), ...(sector.techNews || [])]
+      return recent.slice(0, 4).map((item) => ({
+        source: item.source,
+        headline: item.title,
+        tag: sector.slug,
+        time: item.time,
+      }))
+    })
+    return rows.slice(0, 24)
+  }, [liveSectorIntel])
+
+  const newsTapeToRender = liveNewsTape.length > 0 ? liveNewsTape : fallbackNewsTape
 
   const featuredVideo = useMemo(() => {
     const fallback = {
@@ -1239,18 +1272,25 @@ function App() {
           <span>Policy, markets, technology, sustainability</span>
         </div>
         <div className="news-ticker">
-          <div className="news-track">
-            {[...liveNewsTape, ...liveNewsTape].map((item, idx) => (
-              <p key={`${item.headline}-${idx}`}>
-                <strong>{item.time}</strong> [{item.source}] {item.headline}{' '}
-                <span>{item.tag}</span>
-              </p>
-            ))}
-          </div>
+          {newsTapeToRender.length === 0 ? (
+            <p className="empty">Live news unavailable right now. Check API connectivity.</p>
+          ) : (
+            <div className="news-track">
+              {[...newsTapeToRender, ...newsTapeToRender].map((item, idx) => (
+                <p key={`${item.headline}-${idx}`}>
+                  <strong>{item.time}</strong> [{item.source}] {item.headline}{' '}
+                  <span>{item.tag}</span>
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
       <section className="sector-stack panel">
+        {liveSectorIntel.length === 0 && (
+          <p className="empty">No live sector data available. API is offline or returned no records.</p>
+        )}
         <div className="sector-tabs" role="tablist" aria-label="Energy technology tabs">
           {orderedSectors.map((sector) => (
             <button
@@ -1360,7 +1400,11 @@ function App() {
               <section className="sector-card finance-card">
                 <h4>Finance & Stocks</h4>
                 {filteredSector.finance.length === 0 ? (
-                  <p className="empty">No items for this selection.</p>
+                  <p className="empty">
+                    {apiStatus === 'offline'
+                      ? 'Live stock feed unavailable (API offline).'
+                      : 'No finance items for this region/sector selection.'}
+                  </p>
                 ) : (
                   <ul className="finance-list">
                     {filteredSector.finance.map((item) => (

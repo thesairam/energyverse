@@ -111,6 +111,8 @@ const defaultItem = (title) => ({
 
 const cleanText = (value) => (value || '').replace(/\s+/g, ' ').trim()
 
+const financeCache = new Map()
+
 const toTime = (isoDate) => {
   if (!isoDate) return 'n/a'
   const parsed = new Date(isoDate)
@@ -125,6 +127,24 @@ const toDomain = (url) => {
     return 'source'
   }
 }
+
+const formatValue = (price, currency = 'USD') => {
+  if (!Number.isFinite(price)) return 'n/a'
+  if (currency === 'USD') return `$${price.toFixed(2)}`
+  return `${price.toFixed(2)} ${currency}`
+}
+
+const toTrend = (changePercent) => {
+  if (!Number.isFinite(changePercent)) return 'flat'
+  if (changePercent > 0) return 'up'
+  if (changePercent < 0) return 'down'
+  return 'flat'
+}
+
+const toMove = (changePercent) =>
+  Number.isFinite(changePercent)
+    ? `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`
+    : 'n/a'
 
 const makeHistory = (price, changePercent) => {
   if (!Number.isFinite(price)) return []
@@ -202,29 +222,94 @@ async function fetchGithub(query) {
 }
 
 async function fetchFinance(tickers) {
-  try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers.join(','))}`
-    const response = await fetch(url)
-    if (!response.ok) return []
-    const payload = await response.json()
-    const rows = payload?.quoteResponse?.result || []
-    return rows.map((row) => ({
-      metric: `${row.shortName || row.symbol} (${row.symbol})`,
-      value: Number.isFinite(row.regularMarketPrice) ? `$${row.regularMarketPrice}` : 'n/a',
-      move: Number.isFinite(row.regularMarketChangePercent)
-        ? `${row.regularMarketChangePercent >= 0 ? '+' : ''}${row.regularMarketChangePercent.toFixed(2)}%`
-        : 'n/a',
-      trend:
-        row.regularMarketChangePercent > 0
-          ? 'up'
-          : row.regularMarketChangePercent < 0
-            ? 'down'
-            : 'flat',
-      history: makeHistory(row.regularMarketPrice, row.regularMarketChangePercent),
-    }))
-  } catch {
-    return []
+  const headers = {
+    'User-Agent': 'Mozilla/5.0',
+    Accept: 'application/json,text/plain,*/*',
   }
+
+  const fromQuoteApi = async () => {
+    try {
+      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers.join(','))}`
+      const response = await fetch(url, { headers })
+      if (!response.ok) return []
+      const payload = await response.json()
+      const rows = payload?.quoteResponse?.result || []
+
+      return rows
+        .map((row) => {
+          const symbol = row.symbol
+          const price = Number(row.regularMarketPrice)
+          const changePercent = Number(row.regularMarketChangePercent)
+          const mapped = {
+            metric: `${row.shortName || symbol} (${symbol})`,
+            value: formatValue(price, row.currency || 'USD'),
+            move: toMove(changePercent),
+            trend: toTrend(changePercent),
+            history: makeHistory(price, changePercent),
+          }
+          if (symbol && mapped.value !== 'n/a') {
+            financeCache.set(symbol, mapped)
+          }
+          return mapped
+        })
+        .filter((row) => row.value !== 'n/a')
+    } catch {
+      return []
+    }
+  }
+
+  const fromChartApi = async () => {
+    const rows = await Promise.all(
+      tickers.map(async (symbol) => {
+        try {
+          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`
+          const response = await fetch(url, { headers })
+          if (!response.ok) return null
+          const payload = await response.json()
+          const result = payload?.chart?.result?.[0]
+          if (!result) return null
+
+          const meta = result.meta || {}
+          const closesRaw = result?.indicators?.quote?.[0]?.close || []
+          const closes = closesRaw.filter((value) => Number.isFinite(value)).map((value) => Number(value))
+          const price = Number(meta.regularMarketPrice)
+          const previous = Number(meta.previousClose)
+          const changePercent = Number.isFinite(price) && Number.isFinite(previous) && previous !== 0
+            ? ((price - previous) / previous) * 100
+            : Number.NaN
+
+          const history = closes.length > 0 ? closes.slice(-8).map((value) => Number(value.toFixed(2))) : makeHistory(price, changePercent)
+
+          const mapped = {
+            metric: `${meta.shortName || symbol} (${symbol})`,
+            value: formatValue(price, meta.currency || 'USD'),
+            move: toMove(changePercent),
+            trend: toTrend(changePercent),
+            history,
+          }
+
+          if (mapped.value !== 'n/a') {
+            financeCache.set(symbol, mapped)
+            return mapped
+          }
+
+          return null
+        } catch {
+          return null
+        }
+      }),
+    )
+
+    return rows.filter(Boolean)
+  }
+
+  const quoteRows = await fromQuoteApi()
+  if (quoteRows.length > 0) return quoteRows
+
+  const chartRows = await fromChartApi()
+  if (chartRows.length > 0) return chartRows
+
+  return tickers.map((symbol) => financeCache.get(symbol)).filter(Boolean)
 }
 
 function makeYouTubeLinks(query, slug) {
