@@ -1,6 +1,9 @@
 import Parser from 'rss-parser'
 
-const parser = new Parser({ timeout: 12000 })
+const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 9000)
+const OFFLINE_MODE = process.env.OFFLINE_MODE === '1'
+
+const parser = new Parser({ timeout: DEFAULT_TIMEOUT_MS })
 
 const sectors = [
   {
@@ -102,6 +105,18 @@ const youtubeChannels = {
 const rssUrl = (query) =>
   `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
 
+const withTimeout = async (promiseFactory, timeoutMs = DEFAULT_TIMEOUT_MS) => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await promiseFactory(controller.signal)
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 const defaultItem = (title) => ({
   title,
   source: 'EnergyVerse',
@@ -163,9 +178,10 @@ const makeHistory = (price, changePercent) => {
 }
 
 async function fetchRss(query, limit = 3) {
+  if (OFFLINE_MODE) return []
   try {
-    const feed = await parser.parseURL(rssUrl(query))
-    return (feed.items || []).slice(0, limit).map((item) => ({
+    const feed = await withTimeout(() => parser.parseURL(rssUrl(query)))
+    return (feed?.items || []).slice(0, limit).map((item) => ({
       title: cleanText(item.title),
       source: toDomain(item.link || item.guid || ''),
       time: toTime(item.pubDate),
@@ -177,14 +193,18 @@ async function fetchRss(query, limit = 3) {
 }
 
 async function fetchReddit(query) {
+  if (OFFLINE_MODE) return []
   try {
     const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=2`
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'energyverse-monitor/1.0',
-      },
-    })
-    if (!response.ok) return []
+    const response = await withTimeout((signal) =>
+      fetch(url, {
+        headers: {
+          'User-Agent': 'energyverse-monitor/1.0',
+        },
+        signal,
+      }),
+    )
+    if (!response?.ok) return []
     const payload = await response.json()
     return (payload?.data?.children || []).slice(0, 2).map((item) => {
       const post = item.data
@@ -201,14 +221,18 @@ async function fetchReddit(query) {
 }
 
 async function fetchGithub(query) {
+  if (OFFLINE_MODE) return []
   try {
     const url = `https://api.github.com/search/issues?q=${encodeURIComponent(`${query} is:issue`)}&sort=updated&order=desc&per_page=2`
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-      },
-    })
-    if (!response.ok) return []
+    const response = await withTimeout((signal) =>
+      fetch(url, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+        },
+        signal,
+      }),
+    )
+    if (!response?.ok) return []
     const payload = await response.json()
     return (payload?.items || []).slice(0, 2).map((issue) => ({
       platform: 'GitHub',
@@ -222,6 +246,8 @@ async function fetchGithub(query) {
 }
 
 async function fetchFinance(tickers) {
+  if (OFFLINE_MODE) return tickers.map((symbol) => financeCache.get(symbol)).filter(Boolean)
+
   const headers = {
     'User-Agent': 'Mozilla/5.0',
     Accept: 'application/json,text/plain,*/*',
@@ -230,8 +256,8 @@ async function fetchFinance(tickers) {
   const fromQuoteApi = async () => {
     try {
       const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers.join(','))}`
-      const response = await fetch(url, { headers })
-      if (!response.ok) return []
+      const response = await withTimeout((signal) => fetch(url, { headers, signal }))
+      if (!response?.ok) return []
       const payload = await response.json()
       const rows = payload?.quoteResponse?.result || []
 
@@ -263,8 +289,8 @@ async function fetchFinance(tickers) {
       tickers.map(async (symbol) => {
         try {
           const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`
-          const response = await fetch(url, { headers })
-          if (!response.ok) return null
+          const response = await withTimeout((signal) => fetch(url, { headers, signal }))
+          if (!response?.ok) return null
           const payload = await response.json()
           const result = payload?.chart?.result?.[0]
           if (!result) return null
@@ -361,49 +387,79 @@ function toStartupFromNews(items) {
   }))
 }
 
+const offlineRow = (sector) => {
+  const placeholder = defaultItem(`Offline mode enabled for ${sector.slug}`)
+  return {
+    slug: sector.slug,
+    headline: `${sector.slug} signals paused (offline)`,
+    summary: 'Using cached placeholders to avoid external calls.',
+    latestNews: [placeholder],
+    techNews: [placeholder],
+    products: toProductFromNews([placeholder]),
+    startups: toStartupFromNews([placeholder]),
+    finance: [],
+    youtubeLive: makeYouTubeLinks(sector.youtubeQuery, sector.slug),
+    community: [],
+  }
+}
+
+async function buildSector(sector) {
+  const [latestNews, techNews, startupNews, redditRows, githubRows, financeRows] = await Promise.all([
+    fetchRss(`${sector.query} policy OR market`, 3),
+    fetchRss(`${sector.query} technology OR product`, 3),
+    fetchRss(`${sector.query} startup OR funding`, 2),
+    fetchReddit(sector.reddit),
+    fetchGithub(sector.github),
+    fetchFinance(sector.tickers),
+  ])
+
+  const headline = latestNews[0]?.title || `${sector.slug} market activity update pending`
+  const summary = techNews[0]?.title || `Collecting ${sector.slug.toLowerCase()} technology and business signals.`
+
+  const products = toProductFromNews(techNews)
+  const startups = toStartupFromNews(startupNews)
+
+  const sectorRow = {
+    slug: sector.slug,
+    headline,
+    summary,
+    latestNews: latestNews.length ? latestNews : [defaultItem(`No latest ${sector.slug.toLowerCase()} headlines available`)],
+    techNews: techNews.length ? techNews : [defaultItem(`No ${sector.slug.toLowerCase()} tech headlines available`)],
+    products: products.length ? products : toProductFromNews([defaultItem(`No ${sector.slug.toLowerCase()} product stories yet`)]),
+    startups: startups.length ? startups : toStartupFromNews([defaultItem(`No ${sector.slug.toLowerCase()} startup stories yet`)]),
+    finance: financeRows,
+    youtubeLive: makeYouTubeLinks(sector.youtubeQuery, sector.slug),
+    community: [...redditRows, ...githubRows],
+  }
+
+  const tape = latestNews.slice(0, 2).map((item) => ({
+    source: item.source,
+    headline: item.title,
+    tag: sector.slug,
+    time: item.time,
+  }))
+
+  return { sectorRow, tape }
+}
+
 export async function collectSectorIntel() {
+  if (OFFLINE_MODE) {
+    return {
+      updatedAt: new Date().toISOString(),
+      sectorIntel: sectors.map(offlineRow),
+      newsTape: [],
+    }
+  }
+
+  const results = await Promise.allSettled(sectors.map((sector) => buildSector(sector)))
+
   const sectorIntel = []
   const tape = []
 
-  for (const sector of sectors) {
-    const [latestNews, techNews, startupNews, redditRows, githubRows, financeRows] = await Promise.all([
-      fetchRss(`${sector.query} policy OR market`, 3),
-      fetchRss(`${sector.query} technology OR product`, 3),
-      fetchRss(`${sector.query} startup OR funding`, 2),
-      fetchReddit(sector.reddit),
-      fetchGithub(sector.github),
-      fetchFinance(sector.tickers),
-    ])
-
-    const headline = latestNews[0]?.title || `${sector.slug} market activity update pending`
-    const summary = techNews[0]?.title || `Collecting ${sector.slug.toLowerCase()} technology and business signals.`
-
-    const products = toProductFromNews(techNews)
-    const startups = toStartupFromNews(startupNews)
-
-    const sectorRow = {
-      slug: sector.slug,
-      headline,
-      summary,
-      latestNews: latestNews.length ? latestNews : [defaultItem(`No latest ${sector.slug.toLowerCase()} headlines available`)],
-      techNews: techNews.length ? techNews : [defaultItem(`No ${sector.slug.toLowerCase()} tech headlines available`)],
-      products: products.length ? products : toProductFromNews([defaultItem(`No ${sector.slug.toLowerCase()} product stories yet`)]),
-      startups: startups.length ? startups : toStartupFromNews([defaultItem(`No ${sector.slug.toLowerCase()} startup stories yet`)]),
-      finance: financeRows,
-      youtubeLive: makeYouTubeLinks(sector.youtubeQuery, sector.slug),
-      community: [...redditRows, ...githubRows],
-    }
-
-    sectorIntel.push(sectorRow)
-
-    for (const item of latestNews.slice(0, 2)) {
-      tape.push({
-        source: item.source,
-        headline: item.title,
-        tag: sector.slug,
-        time: item.time,
-      })
-    }
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue
+    sectorIntel.push(result.value.sectorRow)
+    tape.push(...result.value.tape)
   }
 
   return {

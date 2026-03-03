@@ -107,7 +107,7 @@ export type CommunityItem = {
 }
 
 export type SectorIntel = {
-  slug: 'Solar' | 'Wind' | 'Hydro' | 'Geothermal' | 'Storage' | 'Nuclear' | 'EV'
+  slug: 'Solar' | 'Wind' | 'Hydro' | 'Geothermal' | 'Storage' | 'Nuclear' | 'EV' | 'Hydrogen'
   headline: string
   summary: string
   latestNews: LinkItem[]
@@ -1340,6 +1340,129 @@ export const sectorIntel: SectorIntel[] = [
         topic: 'Open V2G protocol adapter for ISO 15118-20 and OCPP',
         activity: '63 issues',
         url: 'https://github.com/topics/vehicle-to-grid',
+        region: 'Global',
+      },
+    ],
+  },
+  {
+    slug: 'Hydrogen',
+    headline: 'Green hydrogen hubs push toward commercial scale with grid-friendly operations',
+    summary: 'Electrolyzer clusters, ammonia offtake, and H2-ready turbines are converging on industrial load pockets.',
+    latestNews: [
+      {
+        title: 'Port hydrogen hub signs long-term ammonia offtake with utility buyer',
+        source: 'H2 Desk',
+        time: '08:55 UTC',
+        url: 'https://example.com/h2-offtake',
+        region: 'EMEA',
+      },
+      {
+        title: 'Electrolyzer OEM books 400 MW for Gulf industrial park phase one',
+        source: 'Industrial Energy',
+        time: '08:12 UTC',
+        url: 'https://example.com/electrolyzer-oem',
+        region: 'APAC',
+      },
+    ],
+    techNews: [
+      {
+        title: 'High-pressure PEM stack clears 30,000-hour durability milestone',
+        source: 'StackWatch',
+        time: '07:44 UTC',
+        url: 'https://example.com/pem-durability',
+        region: 'NAM',
+      },
+      {
+        title: 'H2-ready turbine retrofits validated for 30% blend in peaker fleet',
+        source: 'GasGrid Insights',
+        time: '07:15 UTC',
+        url: 'https://example.com/h2-turbine',
+        region: 'EU',
+      },
+    ],
+    products: [
+      {
+        name: 'ElectraStack 5MW',
+        company: 'VoltHydro',
+        summary: 'Modular PEM electrolyzer skid with integrated deionization.',
+        status: 'Commercial launch',
+        url: 'https://example.com/electrastack',
+        region: 'NAM',
+      },
+      {
+        name: 'AmmoniaFlow Flex',
+        company: 'HarborChem',
+        summary: 'Low-NOx burner system for H2-derived ammonia cracking.',
+        status: 'Pilot',
+        url: 'https://example.com/ammoniaflow',
+        region: 'EMEA',
+      },
+    ],
+    startups: [
+      {
+        name: 'H2Loop',
+        region: 'US',
+        event: 'Series A',
+        value: '$38M',
+        url: 'https://example.com/h2loop',
+        geography: 'NAM',
+      },
+      {
+        name: 'PortBlue Hydrogen',
+        region: 'Singapore',
+        event: 'Offtake MoU',
+        value: '150 kt/y ammonia',
+        url: 'https://example.com/portblue',
+        geography: 'APAC',
+      },
+    ],
+    finance: [
+      {
+        metric: 'Bloom Energy (BE)',
+        value: '$11.42',
+        move: '+2.6%',
+        trend: 'up',
+        history: [10.6, 10.8, 10.9, 11.0, 11.1, 11.2, 11.3, 11.42],
+        region: 'NAM',
+      },
+      {
+        metric: 'Nel ASA (NEL.OL)',
+        value: '9.15 NOK',
+        move: '+1.2%',
+        trend: 'up',
+        history: [8.7, 8.8, 8.9, 9.0, 9.05, 9.08, 9.12, 9.15],
+        region: 'EMEA',
+      },
+    ],
+    youtubeLive: [
+      {
+        title: 'Green hydrogen deep dives',
+        source: 'Hydrogen Insight',
+        time: 'Channel',
+        url: 'https://www.youtube.com/@HydrogenInsight',
+        region: 'Global',
+      },
+      {
+        title: 'Ammonia export corridors',
+        source: 'IEA Hydrogen',
+        time: 'Channel',
+        url: 'https://www.youtube.com/@IEAHydrogen',
+        region: 'Global',
+      },
+    ],
+    community: [
+      {
+        platform: 'Reddit',
+        topic: 'Electrolyzer deployment hurdles and permitting timelines',
+        activity: '214 comments',
+        url: 'https://www.reddit.com/r/hydrogen/',
+        region: 'Global',
+      },
+      {
+        platform: 'GitHub',
+        topic: 'Open-source H2 plant digital twin models',
+        activity: '34 issues',
+        url: 'https://github.com/topics/hydrogen',
         region: 'Global',
       },
     ],

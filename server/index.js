@@ -5,11 +5,11 @@ import { collectSectorIntel } from './dataCollector.js'
 import { layers, events as seedEvents } from './layers.js'
 
 const app = express()
-const port = Number(process.env.PORT || 8787)
+const port = Number(process.env.PORT || 8788)
 
 app.use(express.json())
 
-const layerKeys = ['plants', 'storage', 'projects', 'hydrogen', 'transmission', 'resource', 'policy']
+const layerKeys = ['plants', 'storage', 'projects', 'hydrogen', 'ev', 'nuclear', 'transmission', 'resource', 'policy']
 
 const toPointFeature = (item) => ({
   type: 'Feature',
@@ -83,6 +83,23 @@ const toCounts = () => {
     counts[key] = collection.length
   }
   return counts
+}
+
+const buildContext = () => {
+  return {
+    updatedAt: cache.updatedAt,
+    sectorIntel: cache.sectorIntel?.slice(0, 7) || [],
+    newsTape: cache.newsTape?.slice(0, 40) || [],
+    counts: toCounts(),
+  }
+}
+
+const resolveOllamaUrl = (value) => {
+  const base = (value || 'http://localhost:11434').replace(/\/$/, '')
+  if (base.match(/\/api\/(generate|chat)$/)) return base
+  if (base.endsWith('/api')) return `${base}/generate`
+  if (base.includes('/api/')) return `${base}/generate`
+  return `${base}/api/generate`
 }
 
 app.get('/api/health', (_req, res) => {
@@ -172,7 +189,7 @@ Diffs: ${JSON.stringify(diffs).slice(0, 800)}
 Highlight material signals and keep it to 4 bullets.`
 
   const model = process.env.OLLAMA_MODEL || 'llama3'
-  const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434/api/generate'
+  const ollamaUrl = resolveOllamaUrl(process.env.OLLAMA_URL)
 
   try {
     const response = await fetch(ollamaUrl, {
@@ -182,7 +199,8 @@ Highlight material signals and keep it to 4 bullets.`
     })
 
     if (!response.ok) {
-      throw new Error(`Ollama responded ${response.status}`)
+      const msg = await response.text().catch(() => '')
+      throw new Error(`Ollama responded ${response.status}${msg ? `: ${msg}` : ''}`)
     }
 
     const payload = await response.json()
@@ -192,6 +210,59 @@ Highlight material signals and keep it to 4 bullets.`
   } catch (error) {
     const fallback = `Local LLM unavailable; heuristic summary — Window ${windowDays}d: plants ${counts.plants || 0}, storage ${counts.storage || 0}, projects ${counts.projects || 0}, H2 ${counts.hydrogen || 0}, grid ${counts.transmission || 0}, resource ${counts.resource || 0}, policy ${counts.policy || 0}.`
     return res.json({ summary: fallback, error: error?.message || 'ollama_unavailable' })
+  }
+})
+
+app.post('/api/chat', async (req, res) => {
+  const { messages = [], context = null } = req.body || {}
+  const model = process.env.OLLAMA_MODEL || 'llama3'
+  const ollamaUrl = resolveOllamaUrl(process.env.OLLAMA_URL)
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.flushHeaders?.()
+
+  const systemPrompt = `You are EnergyVerse, an energy markets assistant. Answer concisely using the provided context. If data is missing, say so.`
+  const payload = {
+    model,
+    stream: true,
+    prompt: `${systemPrompt}\nContext: ${JSON.stringify(context || buildContext()).slice(0, 12000)}\nUser: ${JSON.stringify(messages).slice(0, 4000)}`,
+  }
+
+  try {
+    const response = await fetch(ollamaUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok || !response.body) {
+      const msg = await response.text().catch(() => '')
+      res.write(
+        `data: ${JSON.stringify({
+          error: `Ollama responded ${response.status}${msg ? `: ${msg}` : ''}`,
+          hint: 'If the model is missing, run: ollama pull ' + model,
+          model,
+          url: ollamaUrl,
+        })}\n\n`,
+      )
+      return res.end()
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (!value) continue
+      const chunk = decoder.decode(value, { stream: true })
+      res.write(chunk)
+    }
+    res.end()
+  } catch (error) {
+    res.write(`data: ${JSON.stringify({ error: error?.message || 'ollama_error' })}\n\n`)
+    res.end()
   }
 })
 

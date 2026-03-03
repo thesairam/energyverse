@@ -10,8 +10,10 @@ import {
   emissions,
   kpis,
   marketRows,
+  newsTape,
   policies,
   projectChanges,
+  sectorIntel,
 } from './data/energyData'
 
 const getYouTubeEmbedUrl = (item: LinkItem) => {
@@ -246,6 +248,7 @@ const sectorColors: Record<SectorIntel['slug'], string> = {
   Storage: '#8be07f',
   Nuclear: '#b4b4ff',
   EV: '#6fe18f',
+  Hydrogen: '#7fd0ff',
 }
 
 const globeBaseStyle = {
@@ -284,6 +287,8 @@ type LayerKey =
   | 'storage'
   | 'projects'
   | 'hydrogen'
+  | 'ev'
+  | 'nuclear'
   | 'transmission'
   | 'resource'
   | 'policy'
@@ -318,6 +323,11 @@ type PolygonFeature = {
   updatedAt: string
 }
 
+type ChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 const nowIso = new Date().toISOString().slice(0, 10)
 
 const layerData: {
@@ -325,6 +335,8 @@ const layerData: {
   storage: BasePoint[]
   projects: BasePoint[]
   hydrogen: BasePoint[]
+  ev: BasePoint[]
+  nuclear: BasePoint[]
   policy: BasePoint[]
   transmission: LineFeature[]
   resource: PolygonFeature[]
@@ -427,7 +439,7 @@ const layerData: {
     {
       id: 'h2-au',
       coords: [-22.6, 118.0],
-      sector: 'Hydro',
+      sector: 'Hydrogen',
       subtype: 'Green H2 hub',
       capacityMW: 500,
       status: 'Pilot',
@@ -438,13 +450,61 @@ const layerData: {
     {
       id: 'h2-eu',
       coords: [52.4, 4.9],
-      sector: 'Hydro',
+      sector: 'Hydrogen',
       subtype: 'Electrolyzer cluster',
       capacityMW: 200,
       status: 'Operational',
       owner: 'Delta Hydrogen',
       updatedAt: '2026-02-24',
       regionTag: 'Netherlands',
+    },
+  ],
+  ev: [
+    {
+      id: 'ev-v2g-uk',
+      coords: [53.5, -1.5],
+      sector: 'EV',
+      subtype: 'Depot V2G pilot',
+      capacityMW: 12,
+      status: 'Pilot',
+      owner: 'Northern Buses',
+      updatedAt: nowIso,
+      regionTag: 'UK',
+    },
+    {
+      id: 'ev-hpc-us',
+      coords: [37.8, -122.2],
+      sector: 'EV',
+      subtype: '350kW charging hub',
+      capacityMW: 8,
+      status: 'Operational',
+      owner: 'BayCharge',
+      updatedAt: '2026-02-26',
+      regionTag: 'NAM',
+    },
+  ],
+  nuclear: [
+    {
+      id: 'nuclear-smr-us',
+      coords: [43.6, -112.0],
+      sector: 'Nuclear',
+      subtype: 'SMR demo',
+      capacityMW: 300,
+      status: 'FEED',
+      owner: 'Idaho SMR',
+      updatedAt: nowIso,
+      regionTag: 'NAM',
+    },
+    {
+      id: 'nuclear-gen4-fr',
+      coords: [46.5, 2.6],
+      sector: 'Nuclear',
+      subtype: 'Gen IV pilot',
+      capacityMW: 150,
+      status: 'Concept',
+      owner: 'HexaNuke',
+      updatedAt: '2026-02-20',
+      regionTag: 'France',
     },
   ],
   policy: [
@@ -530,6 +590,8 @@ const layerLabels: Record<LayerKey, string> = {
   storage: 'Storage',
   projects: 'Projects (UC)',
   hydrogen: 'Green Hydrogen',
+  ev: 'EV & V2G',
+  nuclear: 'Nuclear Newbuild',
   transmission: 'Transmission',
   resource: 'Resource Potential',
   policy: 'Policy & Events',
@@ -542,13 +604,13 @@ function App() {
   const lastUpdated = useMemo(() => new Date().toUTCString(), [])
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<string | null>(null)
   const [apiStatus, setApiStatus] = useState<'online' | 'offline'>('offline')
-  const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>([])
-  const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>([])
+  const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>(newsTape)
+  const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>(sectorIntel)
   const [activeSector, setActiveSector] = useState<SectorIntel['slug']>('Storage')
   const [activeRegion, setActiveRegion] = useState<Region>('Global')
   const [activeCountry, setActiveCountry] = useState<Region | 'All'>('All')
 
-  const sectorOrder: SectorIntel['slug'][] = ['Storage', 'EV', 'Nuclear', 'Solar', 'Wind', 'Hydro', 'Geothermal']
+  const sectorOrder: SectorIntel['slug'][] = ['Storage', 'EV', 'Hydrogen', 'Nuclear', 'Solar', 'Wind', 'Hydro', 'Geothermal']
   const orderedSectors = [...liveSectorIntel].sort((a, b) => {
     const aIdx = sectorOrder.indexOf(a.slug)
     const bIdx = sectorOrder.indexOf(b.slug)
@@ -569,6 +631,8 @@ function App() {
     storage: true,
     projects: true,
     hydrogen: false,
+    ev: false,
+    nuclear: false,
     transmission: false,
     resource: false,
     policy: true,
@@ -579,6 +643,12 @@ function App() {
   const [streamSelections, setStreamSelections] = useState<Record<string, number>>({})
   const [aiSummary, setAiSummary] = useState('Collecting map signals...')
   const mapRef = useRef<null | any>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: 'Hi! Ask me about any sector, region, or layer.' },
+  ])
+  const [chatInput, setChatInput] = useState('')
+  const [chatStreaming, setChatStreaming] = useState(false)
 
   const filteredGeo = useMemo(() => {
     const cutoff = timeWindowDays > 0 ? Date.now() - timeWindowDays * 24 * 60 * 60 * 1000 : 0
@@ -610,6 +680,12 @@ function App() {
       .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
     const hydrogen = layerData.hydrogen
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .map(pointToFeature)
+    const ev = layerData.ev
+      .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
+      .map(pointToFeature)
+    const nuclear = layerData.nuclear
       .filter((p) => inWindow(p.updatedAt) && regionFilter(p.regionTag))
       .map(pointToFeature)
     const policy = layerData.policy
@@ -680,6 +756,8 @@ function App() {
       storage: { type: 'FeatureCollection' as const, features: storage },
       projects: { type: 'FeatureCollection' as const, features: projects },
       hydrogen: { type: 'FeatureCollection' as const, features: hydrogen },
+      ev: { type: 'FeatureCollection' as const, features: ev },
+      nuclear: { type: 'FeatureCollection' as const, features: nuclear },
       policy: { type: 'FeatureCollection' as const, features: policy },
       topics: { type: 'FeatureCollection' as const, features: topics },
       transmission: { type: 'FeatureCollection' as const, features: transmission },
@@ -700,6 +778,8 @@ function App() {
       `Storage: ${counts.storage || 0}`,
       `Projects: ${counts.projects || 0}`,
       `H2 hubs: ${counts.hydrogen || 0}`,
+      `EV sites: ${counts.ev || 0}`,
+      `Nuclear: ${counts.nuclear || 0}`,
       `Topics: ${counts.topics || 0}`,
       `Grid lines: ${counts.transmission || 0}`,
       `Resource tiles: ${counts.resource || 0}`,
@@ -749,12 +829,8 @@ function App() {
         const payload = await response.json()
         if (!mounted) return
 
-        setLiveSectorIntel((prev) =>
-          Array.isArray(payload.sectorIntel) && payload.sectorIntel.length > 0 ? payload.sectorIntel : prev,
-        )
-        setLiveNewsTape((prev) =>
-          Array.isArray(payload.newsTape) && payload.newsTape.length > 0 ? payload.newsTape : prev,
-        )
+        setLiveSectorIntel(Array.isArray(payload.sectorIntel) && payload.sectorIntel.length > 0 ? payload.sectorIntel : sectorIntel)
+        setLiveNewsTape(Array.isArray(payload.newsTape) && payload.newsTape.length > 0 ? payload.newsTape : newsTape)
 
         setLiveUpdatedAt(typeof payload.updatedAt === 'string' ? payload.updatedAt : null)
         setApiStatus('online')
@@ -774,6 +850,90 @@ function App() {
       window.clearInterval(timer)
     }
   }, [])
+
+  const sendChat = async () => {
+    if (chatStreaming) return
+    const question = chatInput.trim()
+    if (!question) return
+
+    const userMessage: ChatMessage = { role: 'user', content: question }
+    setChatInput('')
+    setChatMessages((prev) => [...prev, userMessage, { role: 'assistant', content: '' }])
+    setChatStreaming(true)
+
+    const contextPayload = {
+      sectorIntel: liveSectorIntel.slice(0, 7),
+      newsTape: newsTapeToRender.slice(0, 30),
+      counts,
+      region: activeRegion,
+      country: activeCountry,
+    }
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [...chatMessages, userMessage], context: contextPayload }),
+      })
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Chat API ${response.status}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let assistantContent = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (!value) continue
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const parsed = JSON.parse(line)
+            if (parsed?.response) {
+              assistantContent += parsed.response
+            }
+          } catch {
+            assistantContent += line
+          }
+
+          setChatMessages((prev) => {
+            const copy = [...prev]
+            copy[copy.length - 1] = { role: 'assistant', content: assistantContent }
+            return copy
+          })
+        }
+      }
+
+      if (assistantContent.trim().length === 0) {
+        setChatMessages((prev) => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'assistant',
+            content: 'No response from Ollama. Please try again.',
+          }
+          return copy
+        })
+      }
+    } catch (error) {
+      setChatMessages((prev) => {
+        const copy = [...prev]
+        copy[copy.length - 1] = {
+          role: 'assistant',
+          content: `Chat failed: ${error?.message || 'unknown error'}`,
+        }
+        return copy
+      })
+    } finally {
+      setChatStreaming(false)
+    }
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -862,6 +1022,8 @@ function App() {
       ensureSourceIfVisible('storage-src', filteredGeo.storage, layerToggles.storage)
       ensureSourceIfVisible('projects-src', filteredGeo.projects, layerToggles.projects)
       ensureSourceIfVisible('hydrogen-src', filteredGeo.hydrogen, layerToggles.hydrogen)
+      ensureSourceIfVisible('ev-src', filteredGeo.ev, layerToggles.ev)
+      ensureSourceIfVisible('nuclear-src', filteredGeo.nuclear, layerToggles.nuclear)
       ensureSourceIfVisible('policy-src', filteredGeo.policy, layerToggles.policy)
       ensureSourceIfVisible('topics-src', filteredGeo.topics, layerToggles.topics)
       ensureSourceIfVisible('tx-src', filteredGeo.transmission, layerToggles.transmission)
@@ -893,6 +1055,8 @@ function App() {
       if (layerToggles.storage || map.getLayer('storage-layer')) pointLayer('storage-layer', 'storage-src', '#8be07f')
       if (layerToggles.projects || map.getLayer('projects-layer')) pointLayer('projects-layer', 'projects-src', '#ffd47e')
       if (layerToggles.hydrogen || map.getLayer('hydrogen-layer')) pointLayer('hydrogen-layer', 'hydrogen-src', '#76d1ff')
+      if (layerToggles.ev || map.getLayer('ev-layer')) pointLayer('ev-layer', 'ev-src', '#6fe18f')
+      if (layerToggles.nuclear || map.getLayer('nuclear-layer')) pointLayer('nuclear-layer', 'nuclear-src', '#b4b4ff')
       if (layerToggles.policy || map.getLayer('policy-layer')) pointLayer('policy-layer', 'policy-src', '#ff9f7a')
       if (layerToggles.topics || map.getLayer('topics-layer')) pointLayer('topics-layer', 'topics-src', '#a0e0ff')
 
@@ -926,6 +1090,8 @@ function App() {
       setVisibility('storage-layer', layerToggles.storage)
       setVisibility('projects-layer', layerToggles.projects)
       setVisibility('hydrogen-layer', layerToggles.hydrogen)
+      setVisibility('ev-layer', layerToggles.ev)
+      setVisibility('nuclear-layer', layerToggles.nuclear)
       setVisibility('policy-layer', layerToggles.policy)
       setVisibility('topics-layer', layerToggles.topics)
       setVisibility('tx-layer', layerToggles.transmission)
@@ -1049,6 +1215,9 @@ function App() {
           <span className="updated">Updated {lastUpdated}</span>
           <span className={`api-chip ${apiStatus}`}>API {apiStatus}</span>
           {liveUpdatedAt && <span className="updated">Feed {new Date(liveUpdatedAt).toUTCString()}</span>}
+          <button className="chat-toggle" type="button" onClick={() => setChatOpen((prev) => !prev)}>
+            {chatOpen ? 'Close Chat' : 'Chat (Ollama)'}
+          </button>
         </div>
       </header>
 
@@ -1073,7 +1242,12 @@ function App() {
                 'storage',
                 'projects',
                 'hydrogen',
+                'ev',
+                'nuclear',
                 'policy',
+                'transmission',
+                'resource',
+                'topics',
               ] as LayerKey[]
             ).map((key) => (
               <label key={key} className="layer-toggle">
@@ -1103,6 +1277,16 @@ function App() {
               <span className="legend-dot" style={{ background: color }} /> {sector}
             </div>
           ))}
+          <div className="legend-divider" />
+          <div className="legend-item legend-note">
+            <span className="legend-dot" /> Points: assets, hubs, pilots
+          </div>
+          <div className="legend-item legend-note">
+            <span className="legend-line" /> Lines: transmission / interconnects
+          </div>
+          <div className="legend-item legend-note">
+            <span className="legend-fill" /> Polygons: resource potential tiles
+          </div>
         </div>
       </section>
 
@@ -1204,6 +1388,46 @@ function App() {
               </li>
             ))}
           </ul>
+
+            <aside className={`chat-drawer ${chatOpen ? 'open' : ''}`} aria-label="Ollama chat">
+              <div className="chat-header">
+                <div>
+                  <p className="eyebrow">Ollama Local</p>
+                  <h3>Context-aware chat</h3>
+                </div>
+                <div className="chat-meta">
+                  <span className={`api-chip ${chatStreaming ? 'online' : apiStatus}`}>{chatStreaming ? 'Streaming' : `API ${apiStatus}`}</span>
+                  <button type="button" className="chat-close" onClick={() => setChatOpen(false)} aria-label="Close chat">
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div className="chat-body">
+                {chatMessages.map((msg, idx) => (
+                  <div key={`${msg.role}-${idx}`} className={`chat-bubble ${msg.role}`}>
+                    <p>{msg.content}</p>
+                  </div>
+                ))}
+              </div>
+              <form
+                className="chat-input"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void sendChat()
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="Ask about any sector, region, or layer..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  disabled={chatStreaming}
+                />
+                <button type="submit" disabled={chatStreaming}>
+                  {chatStreaming ? 'Streaming...' : 'Send'}
+                </button>
+              </form>
+            </aside>
         </article>
 
         <article className="panel span-4">
