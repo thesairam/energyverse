@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: energyverse-api
+    restart: unless-stopped
+    environment:
+      PORT: 8788
+      NODE_ENV: production
+      # OLLAMA_URL: http://host.docker.internal:11434
+      # OLLAMA_MODEL: llama3
+    ports:
+      - "8789:8788"
+    networks:
+      - energyverse-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8788/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: energyverse-web
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - energyverse-net
+
+networks:
+  energyverse-net:
+    driver: bridge

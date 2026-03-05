@@ -149,7 +149,7 @@ export const kpis: Kpi[] = [
 export const marketRows: MarketRow[] = [
   {
     asset: 'EUA Carbon Futures',
-    region: 'EU',
+    region: 'EMEA',
     price: '€76.10',
     change: '-1.1%',
     trend: 'down',
@@ -179,7 +179,7 @@ export const marketRows: MarketRow[] = [
 
 export const policies: PolicyItem[] = [
   {
-    region: 'EU',
+    region: 'EMEA',
     title: 'Grid Flexibility Act enters dispatch phase for storage and demand response',
     effectiveDate: 'Mar 04',
     impact: 'high',
@@ -1377,7 +1377,7 @@ export const sectorIntel: SectorIntel[] = [
         source: 'GasGrid Insights',
         time: '07:15 UTC',
         url: 'https://example.com/h2-turbine',
-        region: 'EU',
+        region: 'EMEA',
       },
     ],
     products: [
@@ -1467,4 +1467,99 @@ export const sectorIntel: SectorIntel[] = [
       },
     ],
   },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Metrics — Fund Flows, LCOE, Investment Deals, CO₂ by Sector
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FundFlowRow = {
+  asset: string      // ETF or fund ticker/name
+  sector: string
+  flow: string       // e.g. "+$1.2B"
+  period: string     // "Q1 2026"
+  aum: string        // Assets under management
+  trend: 'in' | 'out' | 'flat'
+}
+
+export const fundFlows: FundFlowRow[] = [
+  { asset: 'TAN (Invesco Solar)', sector: 'Solar', flow: '+$840M', period: 'Q1 2026', aum: '$1.8B', trend: 'in' },
+  { asset: 'FAN (First Trust Wind)', sector: 'Wind', flow: '+$312M', period: 'Q1 2026', aum: '$512M', trend: 'in' },
+  { asset: 'LIT (Global X Lithium)', sector: 'Storage', flow: '-$95M', period: 'Q1 2026', aum: '$890M', trend: 'out' },
+  { asset: 'ICLN (iShares Clean Energy)', sector: 'Mixed RE', flow: '+$1.2B', period: 'Q1 2026', aum: '$3.1B', trend: 'in' },
+  { asset: 'URA (Global X Uranium)', sector: 'Nuclear', flow: '+$460M', period: 'Q1 2026', aum: '$2.4B', trend: 'in' },
+  { asset: 'DRIV (Self-Driving & EV)', sector: 'EV', flow: '+$220M', period: 'Q1 2026', aum: '$1.1B', trend: 'in' },
+  { asset: 'HJEN (Direxion H2 ETF)', sector: 'Hydrogen', flow: '-$38M', period: 'Q1 2026', aum: '$64M', trend: 'out' },
+  { asset: 'GRID (First Trust GRID)', sector: 'Storage', flow: '+$180M', period: 'Q1 2026', aum: '$420M', trend: 'in' },
+]
+
+export type LcoeRow = {
+  tech: string
+  lcoe: string      // e.g. "28 $/MWh"
+  delta: string     // YoY change e.g. "-6%"
+  trend: 'up' | 'down' | 'flat'
+  region: string
+  year: string
+  source: string
+}
+
+export const lcoeData: LcoeRow[] = [
+  { tech: 'Utility Solar (PV)', lcoe: '28 $/MWh', delta: '-8%', trend: 'down', region: 'Global', year: '2025', source: 'IRENA' },
+  { tech: 'Onshore Wind', lcoe: '33 $/MWh', delta: '-5%', trend: 'down', region: 'Global', year: '2025', source: 'IRENA' },
+  { tech: 'Offshore Wind', lcoe: '92 $/MWh', delta: '-7%', trend: 'down', region: 'Global', year: '2025', source: 'BNEF' },
+  { tech: 'Li-ion BESS (4h)', lcoe: '110 $/MWh', delta: '-12%', trend: 'down', region: 'Global', year: '2025', source: 'NREL' },
+  { tech: 'Nuclear (new build)', lcoe: '145 $/MWh', delta: '+2%', trend: 'up', region: 'US/EU', year: '2025', source: 'EIA' },
+  { tech: 'Combined Cycle Gas', lcoe: '55 $/MWh', delta: '+14%', trend: 'up', region: 'USA', year: '2025', source: 'EIA' },
+  { tech: 'Green Hydrogen', lcoe: '5.8 $/kg', delta: '-15%', trend: 'down', region: 'EU', year: '2025', source: 'BNEF' },
+  { tech: 'Geothermal', lcoe: '40 $/MWh', delta: '-3%', trend: 'down', region: 'Global', year: '2025', source: 'IRENA' },
+  { tech: 'Rooftop Solar', lcoe: '62 $/MWh', delta: '-9%', trend: 'down', region: 'USA', year: '2025', source: 'NREL' },
+  { tech: 'Small Modular Reactor', lcoe: '120 $/MWh', delta: '–', trend: 'flat', region: 'Projected', year: '2030', source: 'IAEA' },
+]
+
+export type InvestDeal = {
+  company: string
+  amount: string
+  round: string
+  sector: string
+  country: string
+  date: string
+  description: string
+}
+
+export const investDeals: InvestDeal[] = [
+  { company: 'Northvolt', amount: '$5.0B', round: 'Restructuring/DIP', sector: 'Storage', country: 'Sweden', date: '2025-01', description: 'Battery cell gigafactory restructuring financing' },
+  { company: 'Aker Clean Hydrogen', amount: '$800M', round: 'Project Finance', sector: 'Hydrogen', country: 'Norway', date: '2025-03', description: 'Green hydrogen production plant, Aukra' },
+  { company: 'H2 Green Steel', amount: '$4.7B', round: 'Series C + Debt', sector: 'Hydrogen', country: 'Sweden', date: '2025-02', description: 'Green steel and electrolyzer complex, Boden' },
+  { company: 'Form Energy', amount: '$405M', round: 'Series F', sector: 'Storage', country: 'USA', date: '2025-04', description: 'Iron-air LDES battery technology scale-up' },
+  { company: 'Kairos Power', amount: '$450M', round: 'Series C', sector: 'Nuclear', country: 'USA', date: '2025-03', description: 'Fluoride salt-cooled SMR demo reactor' },
+  { company: 'Redwood Materials', amount: '$1.0B', round: 'Series C', sector: 'Storage', country: 'USA', date: '2025-02', description: 'Battery recycling and anode materials plant' },
+  { company: 'Octopus Energy', amount: '$800M', round: 'Private Equity', sector: 'Solar', country: 'UK', date: '2025-01', description: 'Retail energy with integrated solar + storage' },
+  { company: 'Nextracker', amount: '$600M', round: 'Secondary/Debt', sector: 'Solar', country: 'USA', date: '2025-04', description: 'Solar tracker manufacturing expansion APAC' },
+  { company: 'Verkor', amount: '$2.1B', round: 'Project Finance', sector: 'Storage', country: 'France', date: '2025-03', description: 'EV battery gigafactory, Dunkirk' },
+  { company: 'ChargePoint', amount: '$232M', round: 'Convertible Note', sector: 'EV', country: 'USA', date: '2025-02', description: 'EV charging network expansion' },
+  { company: 'Lightsource bp', amount: '$500M', round: 'Debt', sector: 'Solar', country: 'UK/Global', date: '2025-01', description: 'Utility solar project pipeline financing' },
+  { company: 'Aker Horizons', amount: '$1.2B', round: 'Project Finance', sector: 'Wind', country: 'Norway', date: '2025-04', description: 'Floating offshore wind FOWT array' },
+]
+
+export type Co2SectorRow = {
+  sector: string
+  region: string
+  mtco2: number     // Megatons CO2eq
+  target: number    // 2030 target
+  yoy: string       // e.g. "-4%"
+  trend: 'up' | 'down' | 'flat'
+  year: number
+}
+
+export const co2BySector: Co2SectorRow[] = [
+  { sector: 'Power & Heat', region: 'Global', mtco2: 14200, target: 9000, yoy: '-3.1%', trend: 'down', year: 2024 },
+  { sector: 'Transport', region: 'Global', mtco2: 8400, target: 5500, yoy: '-0.8%', trend: 'down', year: 2024 },
+  { sector: 'Industry', region: 'Global', mtco2: 9100, target: 6500, yoy: '+0.2%', trend: 'up', year: 2024 },
+  { sector: 'Buildings', region: 'Global', mtco2: 2900, target: 1800, yoy: '-1.5%', trend: 'down', year: 2024 },
+  { sector: 'Agriculture', region: 'Global', mtco2: 5800, target: 4800, yoy: '+0.4%', trend: 'up', year: 2024 },
+  { sector: 'Power & Heat', region: 'EU-27', mtco2: 850, target: 440, yoy: '-9.2%', trend: 'down', year: 2024 },
+  { sector: 'Power & Heat', region: 'USA', mtco2: 1640, target: 680, yoy: '-2.4%', trend: 'down', year: 2024 },
+  { sector: 'Power & Heat', region: 'China', mtco2: 5600, target: 4100, yoy: '-1.8%', trend: 'down', year: 2024 },
+  { sector: 'Power & Heat', region: 'India', mtco2: 1320, target: 880, yoy: '+3.1%', trend: 'up', year: 2024 },
+  { sector: 'Transport', region: 'EU-27', mtco2: 260, target: 110, yoy: '-3.6%', trend: 'down', year: 2024 },
 ]

@@ -1,66 +1,121 @@
 import Parser from 'rss-parser'
+import { rankItems } from './scorer.js'
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 9000)
 const OFFLINE_MODE = process.env.OFFLINE_MODE === '1'
 
 const parser = new Parser({ timeout: DEFAULT_TIMEOUT_MS })
 
+// Date after which we consider news recent (last 45 days rolling)
+const newsAfter = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() - 45)
+  return d.toISOString().slice(0, 10) // YYYY-MM-DD
+})()
+
 const sectors = [
   {
     slug: 'Solar',
-    query: 'solar energy',
-    youtubeQuery: 'solar energy live news',
+    // Multiple specific queries to get diverse, non-overlapping solar news
+    queries: [
+      `solar photovoltaic utility scale after:${newsAfter}`,
+      `solar panel manufacturing IEC NREL after:${newsAfter}`,
+      `solar power plant commissioning MW GW after:${newsAfter}`,
+      `solar energy investment funding after:${newsAfter}`,
+      `rooftop solar distributed generation prosumer after:${newsAfter}`,
+    ],
     tickers: ['FSLR', 'ENPH', 'TAN', 'SEDG', 'RUN'],
-    reddit: 'solar energy utility scale',
-    github: 'solar energy',
+    reddit: 'solar photovoltaic utility scale',
+    github: 'solar energy forecasting',
   },
   {
     slug: 'Wind',
-    query: 'wind energy',
-    youtubeQuery: 'offshore wind live news',
-    tickers: ['VWS.CO', 'GEV', 'FAN', 'ORSTED.CO', 'TPIC'],
-    reddit: 'wind energy offshore',
-    github: 'wind energy',
+    queries: [
+      `offshore wind turbine installation after:${newsAfter}`,
+      `onshore wind farm capacity GW after:${newsAfter}`,
+      `wind energy contract auction CfD after:${newsAfter}`,
+      `wind power investment financing after:${newsAfter}`,
+      `floating offshore wind FOWT after:${newsAfter}`,
+    ],
+    tickers: ['GEV', 'FAN', 'TPIC', 'NEE', 'VWSYF'],
+    reddit: 'wind energy offshore turbine',
+    github: 'wind power forecasting',
   },
   {
     slug: 'Hydro',
-    query: 'hydropower',
-    youtubeQuery: 'hydropower live news',
-    tickers: ['BEP', 'CWEN', 'RNW.TO', 'AY', 'NEE'],
-    reddit: 'hydropower pumped storage',
-    github: 'hydropower optimization',
+    queries: [
+      `hydropower dam project capacity after:${newsAfter}`,
+      `pumped storage hydropower PSH after:${newsAfter}`,
+      `run of river hydro plant commissioning after:${newsAfter}`,
+      `hydropower investment IRENA IHA after:${newsAfter}`,
+    ],
+    tickers: ['BEP', 'CWEN', 'AY', 'NEE', 'CPKF'],
+    reddit: 'hydropower pumped storage hydro',
+    github: 'hydropower optimization scheduling',
   },
   {
     slug: 'Geothermal',
-    query: 'geothermal energy',
-    youtubeQuery: 'geothermal energy live news',
-    tickers: ['ORA', 'CLNE', 'BGRY', 'NFE', 'CPN'],
-    reddit: 'geothermal energy projects',
-    github: 'geothermal',
+    queries: [
+      `geothermal energy plant project after:${newsAfter}`,
+      `enhanced geothermal system EGS drilling after:${newsAfter}`,
+      `geothermal power capacity MW Iceland Chile after:${newsAfter}`,
+      `geothermal heat pump district heating after:${newsAfter}`,
+    ],
+    tickers: ['ORA', 'CLNE', 'NFE', 'GEO', 'ALTV'],
+    reddit: 'geothermal energy EGS wells',
+    github: 'geothermal reservoir simulation',
   },
   {
     slug: 'Storage',
-    query: 'battery energy storage',
-    youtubeQuery: 'battery storage live news',
+    queries: [
+      `battery energy storage system BESS grid after:${newsAfter}`,
+      `lithium iron phosphate LFP battery cell after:${newsAfter}`,
+      `long duration energy storage LDES flow battery after:${newsAfter}`,
+      `energy storage investment funding after:${newsAfter}`,
+      `battery gigafactory manufacturing capacity GWh after:${newsAfter}`,
+    ],
     tickers: ['FLNC', 'TSLA', 'LIT', 'STEM', 'ENS'],
-    reddit: 'battery storage market',
-    github: 'battery management system',
+    reddit: 'battery storage BESS grid flexibility',
+    github: 'battery management system BMS',
   },
   {
     slug: 'Nuclear',
-    query: 'nuclear energy smr',
-    youtubeQuery: 'nuclear energy live news',
+    queries: [
+      `nuclear power plant SMR small modular reactor after:${newsAfter}`,
+      `nuclear energy capacity fleet commissioning after:${newsAfter}`,
+      `nuclear fusion tokamak ITER demo after:${newsAfter}`,
+      `nuclear power investment financing after:${newsAfter}`,
+      `nuclear fuel cycle uranium enrichment after:${newsAfter}`,
+    ],
     tickers: ['CCJ', 'URA', 'BWXT', 'LEU', 'SMR'],
-    reddit: 'nuclear energy smr',
-    github: 'nuclear reactor simulation',
+    reddit: 'nuclear energy SMR fission fusion',
+    github: 'nuclear reactor neutronics simulation',
   },
   {
     slug: 'EV',
-    query: 'electric vehicle OR EV OR V2G',
-    youtubeQuery: 'electric vehicle market live V2G',
+    queries: [
+      `electric vehicle EV sales delivery automaker after:${newsAfter}`,
+      `EV battery charging infrastructure DCFC after:${newsAfter}`,
+      `vehicle-to-grid V2G bidirectional charging after:${newsAfter}`,
+      `electric vehicle policy incentive IRA rebate after:${newsAfter}`,
+      `BYD Tesla Rivian CATL electric vehicle factory after:${newsAfter}`,
+    ],
     tickers: ['TSLA', 'BYDDY', 'LI', 'RIVN', 'CHPT'],
-    reddit: 'electric vehicles v2g',
-    github: 'vehicle to grid',
+    reddit: 'electric vehicles EV battery V2G charging',
+    github: 'vehicle to grid V2G EV charging',
+  },
+  {
+    slug: 'Hydrogen',
+    queries: [
+      `green hydrogen electrolyzer production after:${newsAfter}`,
+      `hydrogen fuel cell power generation after:${newsAfter}`,
+      `hydrogen pipeline infrastructure export after:${newsAfter}`,
+      `green hydrogen investment project funding after:${newsAfter}`,
+      `blue grey hydrogen CCS carbon capture after:${newsAfter}`,
+    ],
+    tickers: ['PLUG', 'BE', 'FCEL', 'BLDP', 'NEL.OL'],
+    reddit: 'hydrogen fuel cell electrolyzer green',
+    github: 'electrolyzer hydrogen water splitting',
   },
 ]
 
@@ -177,7 +232,7 @@ const makeHistory = (price, changePercent) => {
   return series
 }
 
-async function fetchRss(query, limit = 3) {
+async function fetchRss(query, limit = 8) {
   if (OFFLINE_MODE) return []
   try {
     const feed = await withTimeout(() => parser.parseURL(rssUrl(query)))
@@ -190,6 +245,19 @@ async function fetchRss(query, limit = 3) {
   } catch {
     return []
   }
+}
+
+// Fetch from multiple queries, deduplicate by title, return top N
+async function fetchRssMulti(queries, limitTotal = 10) {
+  const results = await Promise.allSettled(queries.map(q => fetchRss(q, 5)))
+  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+  const seen = new Set()
+  return all.filter(item => {
+    const key = item.title.slice(0, 60).toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, limitTotal)
 }
 
 async function fetchReddit(query) {
@@ -398,41 +466,48 @@ const offlineRow = (sector) => {
     products: toProductFromNews([placeholder]),
     startups: toStartupFromNews([placeholder]),
     finance: [],
-    youtubeLive: makeYouTubeLinks(sector.youtubeQuery, sector.slug),
+    youtubeLive: makeYouTubeLinks(`${sector.slug} energy news`, sector.slug),
     community: [],
   }
 }
 
 async function buildSector(sector) {
+  // Build derivative tech/startup queries from the first two base queries (without date suffix)
+  const baseNoDate = sector.queries.map(q => q.replace(/ after:[0-9-]+/, ''))
+  const techQueries = baseNoDate.slice(0, 2).map(q => `${q} technology innovation research after:${newsAfter}`)
+  const startupQueries = baseNoDate.slice(0, 2).map(q => `${q} startup funding investment after:${newsAfter}`)
+
   const [latestNews, techNews, startupNews, redditRows, githubRows, financeRows] = await Promise.all([
-    fetchRss(`${sector.query} policy OR market`, 3),
-    fetchRss(`${sector.query} technology OR product`, 3),
-    fetchRss(`${sector.query} startup OR funding`, 2),
+    fetchRssMulti(sector.queries, 12),
+    fetchRssMulti(techQueries, 8),
+    fetchRssMulti(startupQueries, 6),
     fetchReddit(sector.reddit),
     fetchGithub(sector.github),
     fetchFinance(sector.tickers),
   ])
 
-  const headline = latestNews[0]?.title || `${sector.slug} market activity update pending`
-  const summary = techNews[0]?.title || `Collecting ${sector.slug.toLowerCase()} technology and business signals.`
+  const rankedLatest = rankItems([...latestNews])
+  const rankedTech = rankItems([...techNews])
+  const headline = rankedLatest[0]?.title || `${sector.slug} market activity update pending`
+  const summary = rankedTech[0]?.title || `Collecting ${sector.slug.toLowerCase()} technology and business signals.`
 
-  const products = toProductFromNews(techNews)
-  const startups = toStartupFromNews(startupNews)
+  const products = toProductFromNews(rankedTech)
+  const startups = toStartupFromNews(rankItems([...startupNews]))
 
   const sectorRow = {
     slug: sector.slug,
     headline,
     summary,
-    latestNews: latestNews.length ? latestNews : [defaultItem(`No latest ${sector.slug.toLowerCase()} headlines available`)],
-    techNews: techNews.length ? techNews : [defaultItem(`No ${sector.slug.toLowerCase()} tech headlines available`)],
+    latestNews: rankedLatest.length ? rankedLatest : [defaultItem(`No latest ${sector.slug.toLowerCase()} headlines available`)],
+    techNews: rankedTech.length ? rankedTech : [defaultItem(`No ${sector.slug.toLowerCase()} tech headlines available`)],
     products: products.length ? products : toProductFromNews([defaultItem(`No ${sector.slug.toLowerCase()} product stories yet`)]),
     startups: startups.length ? startups : toStartupFromNews([defaultItem(`No ${sector.slug.toLowerCase()} startup stories yet`)]),
     finance: financeRows,
-    youtubeLive: makeYouTubeLinks(sector.youtubeQuery, sector.slug),
+    youtubeLive: makeYouTubeLinks(`${sector.slug} energy news`, sector.slug),
     community: [...redditRows, ...githubRows],
   }
 
-  const tape = latestNews.slice(0, 2).map((item) => ({
+  const tape = rankedLatest.slice(0, 2).map((item) => ({
     source: item.source,
     headline: item.title,
     tag: sector.slug,
@@ -441,6 +516,8 @@ async function buildSector(sector) {
 
   return { sectorRow, tape }
 }
+
+export { sectors, buildSector }
 
 export async function collectSectorIntel() {
   if (OFFLINE_MODE) {

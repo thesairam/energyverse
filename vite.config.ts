@@ -10,6 +10,10 @@ export default defineConfig({
         target: 'http://localhost:8788',
         changeOrigin: true,
       },
+      '/stream': {
+        target: 'ws://localhost:8788',
+        ws: true,
+      },
     },
   },
 })
