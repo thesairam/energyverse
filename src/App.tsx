@@ -546,7 +546,6 @@ function MarketPanel({ liveKpis, liveMarket, emissionTracks, bSignals, pChanges,
       </Win>
       <Win title="CO₂ BY SECTOR">
         {co2.map((c, i) => {
-          const pct = Math.min(100, Math.round((c.mtco2 / (c.mtco2 + c.target)) * 100))
           return (
             <div key={i} className="tw-row">
               <span className="tw-col-metric tw-dim">{c.sector}</span>

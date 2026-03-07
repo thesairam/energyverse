@@ -157,10 +157,11 @@ body::after {
 
 /* ── Main area ───────────────────────────────────────────────────────────── */
 .t-main {
-  overflow: hidden;
+  overflow-y: auto;
   background: var(--bg);
   position: relative;
   height: 100%;
+  min-height: 0;
 }
 .t-hidden { display: none !important; }
 
@@ -271,8 +272,7 @@ body::after {
 .sector-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   padding: 6px;
   gap: 6px;
 }
@@ -293,12 +293,10 @@ body::after {
 .sector-summary { font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 
 .sector-grid {
-  flex: 1;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: 1fr;
+  grid-auto-rows: minmax(240px, 1fr);
   gap: 6px;
-  overflow: hidden;
   min-height: 0;
 }
 
