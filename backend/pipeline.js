@@ -1,64 +1,31 @@
 /**
- * pipeline.js — News Ingestion Pipeline
+ * pipeline.js — Renewable Energy News Ingestion Pipeline
  *
  * Implements the strategy from strategy.md:
- *   Query → Normalize → Deduplicate → Filter → Tag → Rank → Serve
+ *   Query → Normalize → Deduplicate → Filter → Tag & Categorize → Rank → Store & Serve
  *
- * This module processes raw RSS items from diverse sources into
- * clean, deduplicated, tagged, and ranked intelligence items.
+ * Core idea (strategy.md):
+ *   "Pull everything → keep what matters → structure it"
  */
 
-// ── Sector keyword maps for auto-tagging ──────────────────────────────────────
-const SECTOR_KEYWORDS = {
-  Solar: ['solar', 'photovoltaic', 'pv ', 'pv-', 'rooftop', 'sunpower', 'longi', 'jinko', 'trina', 'first solar', 'enphase', 'solaredge', 'nrel'],
-  Wind: ['wind', 'turbine', 'offshore wind', 'onshore wind', 'vestas', 'siemens gamesa', 'ørsted', 'orsted', 'floating wind', 'wind farm', 'gwec'],
-  Hydro: ['hydro', 'hydropower', 'hydroelectric', 'dam ', 'pumped storage', 'run of river', 'tidal', 'wave energy'],
-  Geothermal: ['geothermal', 'egs', 'enhanced geothermal', 'fervo', 'heat pump', 'geotherm'],
-  Storage: ['battery', 'storage', 'bess', 'lithium', 'lfp', 'nmc', 'solid state battery', 'flow battery', 'energy storage', 'catl', 'gigafactory', 'ldes'],
-  Nuclear: ['nuclear', 'reactor', 'smr', 'fission', 'fusion', 'uranium', 'tokamak', 'iter', 'nuscale', 'x-energy', 'kairos'],
-  EV: ['electric vehicle', ' ev ', 'ev ', 'tesla', 'byd', 'rivian', 'charging', 'v2g', 'vehicle-to-grid', 'dcfc', 'supercharger', 'electrify'],
-  Hydrogen: ['hydrogen', 'electrolyzer', 'electrolysis', 'fuel cell', 'h2 ', 'green hydrogen', 'blue hydrogen', 'ammonia'],
-}
+import { createHash } from 'crypto'
 
-// ── Region keyword maps for auto-tagging ──────────────────────────────────────
-const REGION_KEYWORDS = {
-  NAM: ['us ', 'usa', 'united states', 'america', 'canada', 'mexico', 'texas', 'california', 'doe', 'ferc', 'ira ', 'congress'],
-  EMEA: ['europe', 'eu ', 'uk ', 'britain', 'germany', 'france', 'spain', 'italy', 'netherlands', 'norway', 'denmark', 'sweden', 'finland', 'ireland', 'scotland', 'portugal'],
-  APAC: ['china', 'india', 'japan', 'korea', 'australia', 'indonesia', 'vietnam', 'thailand', 'taiwan', 'singapore', 'asean', 'asia', 'pacific'],
-  MEA: ['africa', 'saudi', 'uae', 'emirates', 'middle east', 'egypt', 'morocco', 'kenya', 'south africa', 'nigeria'],
-  LATAM: ['brazil', 'chile', 'argentina', 'colombia', 'mexico', 'latin america', 'caribbean', 'peru'],
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// §2  NORMALIZATION LAYER
+//
+//   Convert all incoming data into a unified schema:
+//   { title, description, url, source, published_at, language, content }
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Category patterns for content categorization ──────────────────────────────
-const CATEGORY_PATTERNS = {
-  policy: ['policy', 'regulation', 'legislation', 'government', 'subsidy', 'tariff', 'incentive', 'mandate', 'standard', 'compliance', 'permit', 'approval', 'ban', 'tax credit'],
-  finance: ['investment', 'funding', 'ipo', 'acquisition', 'merger', 'deal', 'valuation', 'revenue', 'profit', 'stock', 'share', 'market cap', 'billion', 'million'],
-  technology: ['technology', 'innovation', 'research', 'breakthrough', 'patent', 'prototype', 'efficiency', 'performance', 'lab', 'test', 'record'],
-  startup: ['startup', 'seed', 'series a', 'series b', 'series c', 'venture', 'accelerator', 'incubator', 'founded'],
-  project: ['project', 'plant', 'farm', 'facility', 'commission', 'construction', 'operational', 'capacity', 'mw', 'gw', 'megawatt', 'gigawatt'],
-}
-
-// ── Energy relevance keywords ─────────────────────────────────────────────────
-const ENERGY_KEYWORDS = [
-  'energy', 'power', 'electric', 'renewable', 'clean', 'green', 'grid', 'utility',
-  'carbon', 'emission', 'climate', 'sustainability', 'transition', 'decarboni',
-  'megawatt', 'gigawatt', 'kilowatt', 'kwh', 'mwh', 'gwh',
-  'solar', 'wind', 'hydro', 'nuclear', 'geothermal', 'hydrogen', 'battery', 'storage',
-  'ev ', 'electric vehicle', 'charging', 'turbine', 'panel', 'inverter', 'transformer',
-  'offshore', 'onshore', 'distributed', 'microgrid', 'smart grid',
-  'pv', 'photovoltaic', 'fuel cell', 'electrolyzer', 'reactor', 'smr',
-]
-
-// ── 1. Normalize ──────────────────────────────────────────────────────────────
 /**
- * Normalize a raw RSS item into a standard format.
- * Handles items from Google News RSS, direct RSS feeds, etc.
+ * Normalize a raw RSS item into the unified schema from strategy.md §2.
  */
 export function normalizeItem(raw, feedSource, feedRegion) {
-  const title = cleanText(raw.title || '')
-  const url = normalizeUrl(raw.link || raw.guid || raw.url || '')
-  const pubDate = raw.pubDate || raw.isoDate || raw.published || ''
-  const description = cleanText(raw.contentSnippet || raw.content || raw.summary || raw.description || '')
+  const title = stripHtml(raw.title || '')
+  const url = cleanUrl(raw.link || raw.guid || raw.url || '')
+  const publishedAt = raw.pubDate || raw.isoDate || raw.published || ''
+  const content = stripHtml(raw.content || raw.summary || '')
+  const description = stripHtml(raw.contentSnippet || raw.description || content || '')
 
   // Extract source from Google News-style titles ("Headline - SourceName")
   let source = feedSource || ''
@@ -76,85 +43,105 @@ export function normalizeItem(raw, feedSource, feedRegion) {
 
   return {
     title: cleanTitle,
-    source,
-    url,
-    time: formatTime(pubDate),
-    pubDate,
     description,
+    url,
+    source,
+    published_at: publishedAt,
+    language: detectLanguage(cleanTitle),
+    content,
+    // Derived fields for pipeline stages
+    time: formatTime(publishedAt),
     feedRegion: feedRegion || 'Global',
-    // These will be filled by tagging
-    sectors: [],
-    regions: [],
-    categories: [],
+    _contentHash: contentHash(cleanTitle, url),
   }
 }
 
-// ── 2. Deduplicate ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// §3  DEDUPLICATION LAYER
+//
+//   Remove duplicate stories using:
+//   - URL normalization
+//   - Title similarity (fuzzy matching)
+//   - Content hashing
+//
+//   Output: one canonical article per story
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Deduplicate items by normalized URL and title similarity.
- * When duplicates are found, keep the one from the higher-ranked source.
+ * Deduplicate items using URL normalization, title similarity, and content hashing.
  */
 export function deduplicateItems(items) {
-  const urlMap = new Map()
-  const titleMap = new Map()
-
-  for (const item of items) {
-    // Check URL-based dedup
-    const normUrl = item.url.replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase()
-    if (normUrl && normUrl !== 'https://news.google.com') {
-      if (urlMap.has(normUrl)) continue
-      urlMap.set(normUrl, true)
-    }
-
-    // Check title-based dedup (first 50 chars, lowercased)
-    const titleKey = item.title.slice(0, 50).toLowerCase().replace(/[^a-z0-9]/g, '')
-    if (titleKey.length > 10) {
-      if (titleMap.has(titleKey)) continue
-      titleMap.set(titleKey, true)
-    }
-
-    urlMap.set(normUrl, item)
-  }
-
-  // Collect unique items preserving order
-  const seen = new Set()
-  const result = []
-  for (const item of items) {
-    const normUrl = item.url.replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase()
-    const titleKey = item.title.slice(0, 50).toLowerCase().replace(/[^a-z0-9]/g, '')
-    const key = `${normUrl}||${titleKey}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(item)
-  }
-  return result
-}
-
-// ── 3. Relevance Filter ──────────────────────────────────────────────────────
-/**
- * Filter items for energy relevance.
- * Items from known energy sources pass automatically.
- * Others need keyword matches in title or description.
- */
-export function filterRelevance(items, sectorSlug) {
-  const sectorKws = SECTOR_KEYWORDS[sectorSlug] || []
+  const seen = new Map()
 
   return items.filter(item => {
-    const text = `${item.title} ${item.description}`.toLowerCase()
+    // 1. URL normalization
+    const normUrl = canonicalUrl(item.url)
+    if (normUrl && normUrl !== 'news.google.com' && seen.has('url:' + normUrl)) {
+      return false
+    }
 
-    // Sector-specific keywords → always relevant
-    if (sectorKws.some(kw => text.includes(kw))) return true
+    // 2. Content hashing
+    if (item._contentHash && seen.has('hash:' + item._contentHash)) {
+      return false
+    }
 
-    // General energy keywords → relevant
-    if (ENERGY_KEYWORDS.some(kw => text.includes(kw))) return true
+    // 3. Title similarity (fuzzy: first 50 chars, alphanumeric only)
+    const titleKey = (item.title || '').slice(0, 50).toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (titleKey.length > 10 && seen.has('title:' + titleKey)) {
+      return false
+    }
 
-    // From a known energy source → trust it
-    if (item.source && isKnownEnergySource(item.source)) return true
+    // Mark as seen
+    if (normUrl) seen.set('url:' + normUrl, true)
+    if (item._contentHash) seen.set('hash:' + item._contentHash, true)
+    if (titleKey.length > 10) seen.set('title:' + titleKey, true)
 
-    return false
+    return true
   })
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// §4  RELEVANCE FILTERING
+//
+//   Keep: solar projects, wind farms, EV developments, battery storage systems
+//   Remove: unrelated meanings (e.g., "solar flare")
+//   Use: keyword scoring
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// False-positive patterns to reject (strategy.md: remove "solar flare" etc.)
+const FALSE_POSITIVES = [
+  'solar flare', 'solar eclipse', 'solar system', 'solar plexus',
+  'wind chill', 'wind advisory', 'wind warning', 'wind shear',
+  'nuclear family', 'nuclear option', 'nuclear football',
+  'battery assault', 'battery charge crime',
+  'storage unit rental', 'storage auction',
+  'charged with murder', 'charged with assault', 'charged with fraud',
+]
+
+// Sector keywords for relevance matching
+const SECTOR_KEYWORDS = {
+  Solar: ['solar', 'photovoltaic', 'pv ', 'pv-', 'rooftop', 'sunpower', 'longi', 'jinko', 'trina', 'first solar', 'enphase', 'solaredge', 'nrel'],
+  Wind: ['wind', 'turbine', 'offshore wind', 'onshore wind', 'vestas', 'siemens gamesa', 'floating wind', 'wind farm', 'gwec'],
+  Hydro: ['hydro', 'hydropower', 'hydroelectric', 'dam ', 'pumped storage', 'run of river', 'tidal', 'wave energy'],
+  Geothermal: ['geothermal', 'egs', 'enhanced geothermal', 'fervo', 'heat pump', 'geotherm'],
+  Storage: ['battery', 'storage', 'bess', 'lithium', 'lfp', 'nmc', 'solid state battery', 'flow battery', 'energy storage', 'catl', 'gigafactory', 'ldes'],
+  Nuclear: ['nuclear', 'reactor', 'smr', 'fission', 'fusion', 'uranium', 'tokamak', 'iter', 'nuscale', 'x-energy', 'kairos'],
+  EV: ['electric vehicle', ' ev ', 'ev ', 'tesla', 'byd', 'rivian', 'charging', 'v2g', 'vehicle-to-grid', 'dcfc', 'supercharger', 'electrify'],
+  Hydrogen: ['hydrogen', 'electrolyzer', 'electrolysis', 'fuel cell', 'h2 ', 'green hydrogen', 'blue hydrogen', 'ammonia'],
+}
+
+// General energy keywords
+const ENERGY_KEYWORDS = [
+  'energy', 'power', 'electric', 'renewable', 'clean', 'green', 'grid', 'utility',
+  'carbon', 'emission', 'climate', 'sustainability', 'transition', 'decarboni',
+  'megawatt', 'gigawatt', 'kilowatt', 'kwh', 'mwh', 'gwh',
+  'solar', 'wind', 'hydro', 'nuclear', 'geothermal', 'hydrogen', 'battery', 'storage',
+  'ev ', 'electric vehicle', 'charging', 'turbine', 'panel', 'inverter', 'transformer',
+  'offshore', 'onshore', 'distributed', 'microgrid', 'smart grid',
+  'pv', 'photovoltaic', 'fuel cell', 'electrolyzer', 'reactor', 'smr',
+]
+
+// Known energy sources -- items from these always pass relevance filter
 const KNOWN_ENERGY_SOURCES = new Set([
   'pv magazine', 'pv tech', 'cleantechnica', 'electrek', 'renewable energy world',
   'energy storage news', 'recharge news', 'renewables now', 'solar power world',
@@ -167,40 +154,87 @@ const KNOWN_ENERGY_SOURCES = new Set([
   'bloomberg', 'reuters', 'financial times',
 ])
 
-function isKnownEnergySource(source) {
-  return KNOWN_ENERGY_SOURCES.has(source.toLowerCase())
+/**
+ * Filter items for energy relevance (strategy.md §4).
+ * Removes false positives and non-energy content.
+ */
+export function filterRelevance(items, sectorSlug) {
+  const sectorKws = SECTOR_KEYWORDS[sectorSlug] || []
+
+  return items.filter(item => {
+    const text = (item.title + ' ' + item.description).toLowerCase()
+
+    // Reject false positives first (strategy.md: remove "solar flare" etc.)
+    if (FALSE_POSITIVES.some(fp => text.includes(fp))) return false
+
+    // Sector-specific keywords -> always relevant
+    if (sectorKws.some(kw => text.includes(kw))) return true
+
+    // General energy keywords -> relevant
+    if (ENERGY_KEYWORDS.some(kw => text.includes(kw))) return true
+
+    // From a known energy source -> trust it
+    if (item.source && KNOWN_ENERGY_SOURCES.has(item.source.toLowerCase())) return true
+
+    return false
+  })
 }
 
-// ── 4. Tag & Categorize ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// §5  TAGGING & CATEGORIZATION
+//
+//   Assign structured tags:
+//   - Domains: solar, wind, EV, battery
+//   - Subtopics: policy, project, technology, market
+//   - Geography: country, region
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const REGION_KEYWORDS = {
+  NAM: ['us ', 'usa', 'united states', 'america', 'canada', 'mexico', 'texas', 'california', 'doe', 'ferc', 'ira ', 'congress'],
+  EMEA: ['europe', 'eu ', 'uk ', 'britain', 'germany', 'france', 'spain', 'italy', 'netherlands', 'norway', 'denmark', 'sweden', 'finland', 'ireland', 'scotland', 'portugal'],
+  APAC: ['china', 'india', 'japan', 'korea', 'australia', 'indonesia', 'vietnam', 'thailand', 'taiwan', 'singapore', 'asean', 'asia', 'pacific'],
+  MEA: ['africa', 'saudi', 'uae', 'emirates', 'middle east', 'egypt', 'morocco', 'kenya', 'south africa', 'nigeria'],
+  LATAM: ['brazil', 'chile', 'argentina', 'colombia', 'mexico', 'latin america', 'caribbean', 'peru'],
+}
+
+const SUBTOPIC_PATTERNS = {
+  policy: ['policy', 'regulation', 'legislation', 'government', 'subsidy', 'tariff', 'incentive', 'mandate', 'standard', 'compliance', 'permit', 'approval', 'ban', 'tax credit'],
+  project: ['project', 'plant', 'farm', 'facility', 'commission', 'construction', 'operational', 'capacity', 'mw', 'gw', 'megawatt', 'gigawatt'],
+  technology: ['technology', 'innovation', 'research', 'breakthrough', 'patent', 'prototype', 'efficiency', 'performance', 'lab', 'test', 'record'],
+  market: ['investment', 'funding', 'ipo', 'acquisition', 'merger', 'deal', 'valuation', 'revenue', 'profit', 'stock', 'share', 'market cap', 'billion', 'million', 'startup', 'seed', 'series a', 'venture'],
+}
+
 /**
- * Auto-tag items with sectors, regions, and content categories.
+ * Auto-tag a single item with domains, subtopics, and geography (strategy.md §5).
  */
 export function tagItem(item) {
-  const text = `${item.title} ${item.description}`.toLowerCase()
+  const text = (item.title + ' ' + (item.description || '')).toLowerCase()
 
-  // Tag sectors
+  const domains = []
+  const subtopics = []
+  const regions = []
+
   for (const [sector, keywords] of Object.entries(SECTOR_KEYWORDS)) {
-    if (keywords.some(kw => text.includes(kw))) {
-      item.sectors.push(sector)
-    }
+    if (keywords.some(kw => text.includes(kw))) domains.push(sector)
   }
 
-  // Tag regions from content + feed metadata
+  for (const [subtopic, patterns] of Object.entries(SUBTOPIC_PATTERNS)) {
+    if (patterns.some(p => text.includes(p))) subtopics.push(subtopic)
+  }
+
   for (const [region, keywords] of Object.entries(REGION_KEYWORDS)) {
-    if (keywords.some(kw => text.includes(kw))) {
-      item.regions.push(region)
-    }
+    if (keywords.some(kw => text.includes(kw))) regions.push(region)
   }
-  if (item.feedRegion && item.feedRegion !== 'Global' && !item.regions.includes(item.feedRegion)) {
-    item.regions.push(item.feedRegion)
+  if (item.feedRegion && item.feedRegion !== 'Global' && !regions.includes(item.feedRegion)) {
+    regions.push(item.feedRegion)
   }
 
-  // Tag categories
-  for (const [category, patterns] of Object.entries(CATEGORY_PATTERNS)) {
-    if (patterns.some(p => text.includes(p))) {
-      item.categories.push(category)
-    }
-  }
+  item.domains = domains
+  item.subtopics = subtopics
+  item.regions = regions
+  // Backward-compatible aliases
+  item.sectors = domains
+  item.categories = subtopics
 
   return item
 }
@@ -209,45 +243,60 @@ export function tagItems(items) {
   return items.map(tagItem)
 }
 
-// ── 5. Full Pipeline ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// FULL PIPELINE (§2 -> §5, ranking handled by scorer.js §6)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Run the full pipeline: normalize → dedup → filter → tag
- * Ranking is handled by scorer.js separately.
+ * Run the full pipeline: normalize -> dedup -> filter -> tag.
+ * Ranking (§6) is handled separately by scorer.js.
  */
 export function processPipeline(rawItems, sectorSlug, feedSource, feedRegion) {
   const normalized = rawItems.map(raw => normalizeItem(raw, feedSource, feedRegion))
   const deduped = deduplicateItems(normalized)
   const filtered = filterRelevance(deduped, sectorSlug)
-  const tagged = tagItems(filtered)
-  return tagged
+  return tagItems(filtered)
 }
 
 /**
- * Merge items from multiple sources, deduplicate across all of them.
+ * Merge items from multiple sources, then deduplicate across all of them.
  */
 export function mergeAndDeduplicate(...itemArrays) {
-  const all = itemArrays.flat()
-  return deduplicateItems(all)
+  return deduplicateItems(itemArrays.flat())
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function cleanText(value) {
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function stripHtml(value) {
   return (value || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
 }
 
-function normalizeUrl(url) {
+function cleanUrl(url) {
   try {
     const u = new URL(url)
-    // Remove tracking params
-    u.searchParams.delete('utm_source')
-    u.searchParams.delete('utm_medium')
-    u.searchParams.delete('utm_campaign')
-    u.searchParams.delete('utm_content')
-    u.searchParams.delete('utm_term')
+    for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']) {
+      u.searchParams.delete(key)
+    }
     return u.toString()
   } catch {
     return url
   }
+}
+
+function canonicalUrl(url) {
+  try {
+    const u = new URL(url)
+    return (u.hostname + u.pathname).replace(/\/+$/, '').toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+function contentHash(title, url) {
+  const input = (title + '|' + canonicalUrl(url)).toLowerCase()
+  return createHash('md5').update(input).digest('hex').slice(0, 12)
 }
 
 function formatTime(isoDate) {
@@ -255,4 +304,13 @@ function formatTime(isoDate) {
   const parsed = new Date(isoDate)
   if (Number.isNaN(parsed.getTime())) return 'n/a'
   return parsed.toUTCString().slice(17, 22) + ' UTC'
+}
+
+function detectLanguage(text) {
+  if (/[\u4e00-\u9fff]/.test(text)) return 'zh'
+  if (/[\u3040-\u30ff]/.test(text)) return 'ja'
+  if (/[\uac00-\ud7af]/.test(text)) return 'ko'
+  if (/[\u0900-\u097f]/.test(text)) return 'hi'
+  if (/[\u0600-\u06ff]/.test(text)) return 'ar'
+  return 'en'
 }

@@ -17,6 +17,9 @@ export const GLOBAL_FEEDS = [
   { url: 'https://www.powermag.com/feed/', source: 'Power Magazine', region: 'NAM' },
   { url: 'https://energy.mit.edu/news/feed/', source: 'MIT Energy Initiative', region: 'NAM' },
   { url: 'https://renewablesnow.com/feed/', source: 'Renewables Now', region: 'Global' },
+  { url: 'https://www.carbonbrief.org/feed/', source: 'Carbon Brief', region: 'Global' },
+  { url: 'https://thedriven.io/feed/', source: 'The Driven', region: 'APAC' },
+  { url: 'https://energytransition.org/feed/', source: 'Energy Transition', region: 'Global' },
 ]
 
 // ── Sector-Specific Feeds ─────────────────────────────────────────────────────
@@ -31,6 +34,7 @@ export const SECTOR_FEEDS = {
     { url: 'https://www.pv-tech.org/feed/', source: 'PV Tech', region: 'APAC' },
     { url: 'https://solarquarter.com/feed/', source: 'SolarQuarter', region: 'APAC' },
     { url: 'https://mercomindia.com/feed/', source: 'Mercom India', region: 'APAC' },
+    { url: 'https://solarwakeup.substack.com/feed', source: 'SolarWakeup', region: 'NAM' },
   ],
   Wind: [
     { url: 'https://www.rechargenews.com/rss', source: 'Recharge News', region: 'EMEA' },
@@ -40,27 +44,40 @@ export const SECTOR_FEEDS = {
     { url: 'https://gwec.net/feed/', source: 'GWEC', region: 'Global' },
   ],
   Hydro: [
-    // Hydro uses global + institutional feeds primarily
+    { url: 'https://www.hydroreview.com/feed/', source: 'Hydro Review', region: 'Global' },
+    { url: 'https://www.waterpowermagazine.com/feed/', source: 'Water Power Magazine', region: 'Global' },
+    { url: 'https://www.hydropower.org/news/rss', source: 'International Hydropower Association', region: 'Global' },
+    { url: 'https://www.internationalwaterpower.com/feed/', source: 'International Water Power', region: 'Global' },
   ],
   Geothermal: [
-    // Geothermal uses global + institutional feeds primarily
+    { url: 'https://www.thinkgeoenergy.com/feed/', source: 'Think GeoEnergy', region: 'Global' },
+    { url: 'https://geothermalresourcescouncil.blogspot.com/feeds/posts/default?alt=rss', source: 'Geothermal Resources Council', region: 'NAM' },
+    { url: 'https://www.geothermal-energy.org/feed/', source: 'IGA', region: 'Global' },
   ],
   Storage: [
     { url: 'https://www.energy-storage.news/feed/', source: 'Energy Storage News', region: 'Global' },
     { url: 'https://batteryindustry.tech/feed/', source: 'Battery Industry', region: 'Global' },
     { url: 'https://www.pv-magazine.com/category/energy-storage/feed/', source: 'PV Magazine Storage', region: 'Global' },
+    { url: 'https://www.utilitydive.com/topic/energy-storage/feed/', source: 'Utility Dive Storage', region: 'NAM' },
   ],
   Nuclear: [
-    // Nuclear uses global + institutional feeds primarily
+    { url: 'https://world-nuclear-news.org/rss', source: 'World Nuclear News', region: 'Global' },
+    { url: 'https://www.neimagazine.com/feed/', source: 'Nuclear Engineering International', region: 'Global' },
+    { url: 'https://www.ans.org/news/rss/', source: 'ANS Nuclear Newswire', region: 'NAM' },
+    { url: 'https://www.nucnet.org/rss', source: 'NucNet', region: 'EMEA' },
   ],
   EV: [
     { url: 'https://electrek.co/feed/', source: 'Electrek', region: 'NAM' },
     { url: 'https://insideevs.com/rss/', source: 'InsideEVs', region: 'Global' },
     { url: 'https://chargedevs.com/feed/', source: 'Charged EVs', region: 'NAM' },
     { url: 'https://www.greencarreports.com/rss', source: 'Green Car Reports', region: 'NAM' },
+    { url: 'https://ev-database.org/rss/blog.xml', source: 'EV Database', region: 'EMEA' },
   ],
   Hydrogen: [
-    // Hydrogen uses global + institutional feeds primarily
+    { url: 'https://www.h2-view.com/feed/', source: 'H2 View', region: 'Global' },
+    { url: 'https://fuelcellsworks.com/feed/', source: 'FuelCellsWorks', region: 'Global' },
+    { url: 'https://www.hydrogeninsight.com/rss', source: 'Hydrogen Insight', region: 'Global' },
+    { url: 'https://hydrogencouncil.com/feed/', source: 'Hydrogen Council', region: 'Global' },
   ],
 }
 
@@ -69,6 +86,7 @@ export const REGIONAL_FEEDS = [
   // USA
   { url: 'https://www.canarymedia.com/rss', source: 'Canary Media', region: 'NAM' },
   { url: 'https://www.energy.gov/rss.xml', source: 'US Dept of Energy', region: 'NAM' },
+  { url: 'https://www.eia.gov/rss/', source: 'EIA', region: 'NAM' },
   // UK
   { url: 'https://www.businessgreen.com/rss', source: 'BusinessGreen', region: 'EMEA' },
   // Germany
@@ -83,12 +101,22 @@ export const REGIONAL_FEEDS = [
   // China / Asia
   { url: 'https://chinaenergyportal.org/feed/', source: 'China Energy Portal', region: 'APAC' },
   { url: 'https://www.pv-tech.org/feed/', source: 'PV Tech', region: 'APAC' },
+  // Netherlands
+  { url: 'https://www.dutchnews.nl/feed/', source: 'DutchNews', region: 'EMEA' },
+  { url: 'https://www.tno.nl/en/newsroom/rss/', source: 'TNO Energy', region: 'EMEA' },
   // Europe
   { url: 'https://www.euractiv.com/section/energy-environment/feed/', source: 'Euractiv Energy', region: 'EMEA' },
+  // India (additional)
+  { url: 'https://energy.economictimes.indiatimes.com/rss', source: 'ET Energy World', region: 'APAC' },
+  // Japan
+  { url: 'https://www.japantimes.co.jp/feed/', source: 'Japan Times', region: 'APAC' },
   // Africa
   { url: 'https://www.esi-africa.com/feed/', source: 'ESI Africa', region: 'MEA' },
   // Latin America
   { url: 'https://www.pv-magazine-latam.com/feed/', source: 'PV Magazine LATAM', region: 'LATAM' },
+  { url: 'https://www.bnamericas.com/en/rss/news/electric-power', source: 'BNamericas Power', region: 'LATAM' },
+  // Middle East
+  { url: 'https://www.zawya.com/en/rss', source: 'Zawya Energy', region: 'MEA' },
 ]
 
 // ── Government & Institutional ────────────────────────────────────────────────

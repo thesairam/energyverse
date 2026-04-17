@@ -55,6 +55,37 @@ const SOURCE_RANK = {
   'pv magazine germany': 13, 'pv-magazine.de': 13,
   'european commission energy': 16, 'energy.ec.europa.eu': 16,
   'nasa climate': 15, 'climate.nasa.gov': 15,
+  'solarwakeup': 11, 'solarwakeup.substack.com': 11,
+  'utility dive storage': 13, 'ev database': 10,
+  'eia': 14, 'eia.gov': 14,
+  'dutchnews': 8, 'dutchnews.nl': 8,
+  'tno energy': 13, 'tno.nl': 13,
+  'et energy world': 10, 'energy.economictimes.indiatimes.com': 10,
+  // Hydro sources
+  'hydro review': 13, 'hydroreview.com': 13,
+  'water power magazine': 12, 'waterpowermagazine.com': 12,
+  'international water power': 12, 'internationalwaterpower.com': 12,
+  // Geothermal sources
+  'think geoenergy': 14, 'thinkgeoenergy.com': 14,
+  'geothermal resources council': 12, 'geothermalresourcescouncil.blogspot.com': 12,
+  'iga': 12, 'geothermal-energy.org': 12,
+  // Nuclear sources
+  'world nuclear news': 15, 'world-nuclear-news.org': 15,
+  'nuclear engineering international': 14, 'neimagazine.com': 14,
+  'ans nuclear newswire': 13, 'ans.org': 13,
+  'nucnet': 13, 'nucnet.org': 13,
+  // Hydrogen sources
+  'h2 view': 14, 'h2-view.com': 14,
+  'fuelcellsworks': 12, 'fuelcellsworks.com': 12,
+  'hydrogen insight': 14, 'hydrogeninsight.com': 14,
+  'hydrogen council': 13, 'hydrogencouncil.com': 13,
+  // Additional global/regional
+  'carbon brief': 15, 'carbonbrief.org': 15,
+  'the driven': 12, 'thedriven.io': 12,
+  'energy transition': 13, 'energytransition.org': 13,
+  'japan times': 10, 'japantimes.co.jp': 10,
+  'bnamericas': 11, 'bnamericas.com': 11,
+  'zawya': 10, 'zawya.com': 10,
   // General media
   'techcrunch.com': 8, 'techcrunch': 8,
   'cnbc.com': 9, 'cnbc': 9,

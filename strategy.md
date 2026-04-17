@@ -1,21 +1,21 @@
-# 🔐 Cybersecurity News Ingestion Strategy
+# ⚡ Renewable Energy News Ingestion Strategy
 
-**Scope:** Threats, vulnerabilities, breaches, malware, cloud security
+**Scope:** Solar, Wind, PV, EV, V2G, Battery Storage
 **Approach:** Query-Driven Global Ingestion + Filtering Pipeline
 
 ---
 
 # 🧠 Core Idea
 
-Do not track specific sources.
+Do not maintain a list of sources.
 
 Instead:
 
-* Continuously query global cybersecurity signals
-* Ingest broadly
-* Filter and structure internally
+* Continuously query global news ecosystems
+* Ingest everything relevant
+* Filter, deduplicate, and structure internally
 
-> Pull everything → extract threats → structure intelligence
+> Pull everything → keep what matters → structure it
 
 ---
 
@@ -24,13 +24,13 @@ Instead:
 ```text
 Global News Stream
         ↓
-Query (Cyber Topics)
+Query (Energy Topics)
         ↓
 Normalize
         ↓
 Deduplicate
         ↓
-Filter (Cyber relevance)
+Filter (Energy relevance)
         ↓
 Tag & Categorize
         ↓
@@ -47,19 +47,18 @@ Define topic queries:
 
 ### Core Topics
 
-* cybersecurity
-* ransomware
-* data breach
-* malware
-* phishing
-* zero-day vulnerability
-* CVE
+* solar energy
+* photovoltaic / PV
+* wind energy / wind farm
+* battery storage / BESS
+* electric vehicles (EV)
+* vehicle-to-grid (V2G)
 
-### Advanced Topics
+### Optional Extensions
 
-* APT (advanced persistent threat)
-* cloud security
-* supply chain attack
+* grid infrastructure
+* renewable policy
+* energy transition
 
 Run queries continuously (5–15 min interval).
 
@@ -67,7 +66,7 @@ Run queries continuously (5–15 min interval).
 
 # 🧱 2. Normalization Layer
 
-Standardize incoming data:
+Convert all incoming data into a unified schema:
 
 ```json
 {
@@ -85,118 +84,118 @@ Standardize incoming data:
 
 # 🔁 3. Deduplication Layer
 
-Handle duplicate reporting:
+Remove duplicate stories using:
 
-* normalize URLs
-* compare titles
-* hash content
+* URL normalization
+* title similarity (fuzzy matching)
+* content hashing
 
 Output:
 
-* one canonical incident
-* grouped coverage
+* one canonical article
+* optional grouping of similar articles
 
 ---
 
 # 🎯 4. Relevance Filtering
 
-Filter for actual cyber events:
+Filter out noise:
 
 ### Keep:
 
-* breaches
-* vulnerabilities
-* exploits
-* malware campaigns
+* solar projects
+* wind farms
+* EV developments
+* battery storage systems
 
 ### Remove:
 
-* generic IT/security discussions
+* unrelated meanings (e.g., “solar flare”)
 
 Use:
 
 * keyword scoring
-* NLP classification
+* lightweight NLP classification
 
 ---
 
 # 🏷️ 5. Tagging & Categorization
 
-Assign structured labels:
+Assign structured tags:
 
-### Threat Types
+### Domains
 
-* ransomware
-* phishing
-* malware
-* vulnerability
+* solar
+* wind
+* EV
+* battery
 
-### Context
+### Subtopics
 
-* breach
-* exploit
-* advisory
+* policy
+* project
+* technology
+* market
 
-### Entities
+### Geography
 
-* organization
 * country
-* sector
+* region
 
 ---
 
 # 📊 6. Ranking Layer
 
-Score articles based on:
+Score each article based on:
 
 * recency
-* severity indicators (keywords like “critical”, “zero-day”)
-* coverage volume
+* keyword relevance
+* duplication count (coverage strength)
 
 Output:
 
-* prioritized threat feed
+* prioritized feed
 
 ---
 
 # 💾 7. Storage
 
-Store structured intelligence:
+Store structured data:
 
-* incidents
+* articles
 * tags
-* relationships
+* relationships (duplicates / clusters)
 
-Enable:
+Design for:
 
-* time-based tracking
-* threat trends
-* geo analysis
+* filtering
+* time-based queries
+* geo queries
 
 ---
 
 # 🔄 8. Continuous Processing
 
-* Run every 5–15 minutes
-* Update severity & ranking
-* Merge duplicate incidents
+* Run ingestion every 5–15 minutes
+* Update rankings dynamically
+* Re-process duplicates
 
 ---
 
 # ✅ Benefits
 
-* Global threat visibility
-* No dependency on specific sources
-* Scales across regions and languages
-* Real-time detection
+* Global coverage (all countries)
+* No manual source management
+* Scales easily with new topics
+* Near real-time updates
 
 ---
 
 # ⚠️ Trade-offs
 
-* Requires strong filtering (to avoid noise)
-* Needs careful deduplication
-* Some context may require enrichment
+* Requires strong filtering logic
+* Higher compute cost
+* Needs good deduplication
 
 ---
 

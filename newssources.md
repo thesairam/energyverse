@@ -25,6 +25,9 @@
 * Power Magazine — https://www.powermag.com/feed/
 * MIT Energy Initiative — https://energy.mit.edu/news/feed/
 * Energy Storage News — https://www.energy-storage.news/feed/
+* Carbon Brief — https://www.carbonbrief.org/feed/
+* The Driven (Australia) — https://thedriven.io/feed/
+* Energy Transition — https://energytransition.org/feed/
 
 ---
 
@@ -47,6 +50,41 @@
 * Offshore Wind — https://www.offshorewind.biz/feed/
 * WindEurope — https://windeurope.org/feed/
 * GWEC — https://gwec.net/feed/
+
+---
+
+# 💧 3b. Hydro / Hydropower
+
+* Hydro Review — https://www.hydroreview.com/feed/
+* Water Power Magazine — https://www.waterpowermagazine.com/feed/
+* International Hydropower Association — https://www.hydropower.org/news/rss
+* International Water Power — https://www.internationalwaterpower.com/feed/
+
+---
+
+# 🌋 3c. Geothermal
+
+* Think GeoEnergy — https://www.thinkgeoenergy.com/feed/
+* Geothermal Resources Council — https://geothermalresourcescouncil.blogspot.com/feeds/posts/default?alt=rss
+* IGA — https://www.geothermal-energy.org/feed/
+
+---
+
+# ⚛️ 3d. Nuclear
+
+* World Nuclear News — https://world-nuclear-news.org/rss
+* Nuclear Engineering International — https://www.neimagazine.com/feed/
+* ANS Nuclear Newswire — https://www.ans.org/news/rss/
+* NucNet — https://www.nucnet.org/rss
+
+---
+
+# 🟢 3e. Hydrogen / Fuel Cells
+
+* H2 View — https://www.h2-view.com/feed/
+* FuelCellsWorks — https://fuelcellsworks.com/feed/
+* Hydrogen Insight — https://www.hydrogeninsight.com/rss
+* Hydrogen Council — https://hydrogencouncil.com/feed/
 
 ---
 
@@ -127,6 +165,15 @@
 ## 🌎 Latin America
 
 * PV Magazine LATAM — https://www.pv-magazine-latam.com/feed/
+* BNamericas Power — https://www.bnamericas.com/en/rss/news/electric-power
+
+## 🇯🇵 Japan
+
+* Japan Times — https://www.japantimes.co.jp/feed/
+
+## 🌍 Middle East
+
+* Zawya Energy — https://www.zawya.com/en/rss
 
 ---
 
