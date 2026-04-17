@@ -19,7 +19,7 @@
   --bar-h:    32px;
   --kpi-h:    40px;
   --tab-h:    36px;
-  --tick-h:   30px;
+  --tick-h:   22px;
   --dash-h:   540px;
 }
 
@@ -55,7 +55,7 @@ body::after {
 /* ── Terminal shell ──────────────────────────────────────────────────────── */
 .terminal-shell {
   display: grid;
-  grid-template-rows: var(--bar-h) var(--kpi-h) var(--dash-h) var(--tab-h) 1fr var(--tick-h);
+  grid-template-rows: var(--bar-h) var(--kpi-h) var(--dash-h) 1fr var(--tick-h);
   height: 100vh;
   width: 100vw;
   overflow: hidden;
@@ -154,6 +154,8 @@ body::after {
 .t-tab.active { color: var(--green); border-bottom-color: var(--green); background: rgba(57,255,20,.04); }
 .t-tab-global.active { color: var(--amber); border-bottom-color: var(--amber); background: rgba(255,176,0,.04); }
 .t-tab-sm { font-size: 10px; padding: 0 7px; }
+.t-tab-chat { color: var(--amber) !important; font-weight: 700; letter-spacing: .08em; }
+.t-tab-chat.active { color: var(--amber) !important; border-bottom-color: var(--amber) !important; background: rgba(255,176,0,.08) !important; text-shadow: 0 0 8px rgba(255,176,0,.4); }
 
 /* ── Main area ───────────────────────────────────────────────────────────── */
 .t-main {
@@ -295,7 +297,7 @@ body::after {
 .sector-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: minmax(240px, 1fr);
+  grid-auto-rows: minmax(320px, 1fr);
   gap: 6px;
   min-height: 0;
 }
@@ -520,15 +522,17 @@ body::after {
   background: var(--bg2);
   border-top: 1px solid var(--border);
   overflow: hidden;
-  font-size: 11px;
+  font-size: 10px;
   flex-shrink: 0;
+  height: var(--tick-h);
+  max-height: var(--tick-h);
 }
 .t-ticker-label {
   flex-shrink: 0;
-  padding: 0 10px;
+  padding: 0 8px;
   color: var(--amber);
   font-weight: 700;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: .1em;
   border-right: 1px solid var(--border);
   height: 100%;
@@ -665,5 +669,42 @@ select option { background: var(--bg2); }
 .mv-popup td { padding: 2px 6px 2px 0; color: rgba(212,253,228,0.8); vertical-align: top; }
 .mv-popup td:first-child { color: #7fdbad; white-space: nowrap; padding-right: 8px; }
 .mv-popup .popup-headline { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(57,255,20,0.2); font-style: italic; color: rgba(212,253,228,0.7); word-break: break-word; }
+
+/* ── Search ───────────────────────────────────────────────────────────────── */
+.t-search-wrap { position: relative; flex-shrink: 0; }
+.t-search {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 2px 8px;
+  width: 180px;
+  outline: none;
+  transition: border-color .15s;
+}
+.t-search:focus { border-color: var(--green); }
+.t-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border-h);
+  z-index: 1000;
+  max-height: 240px;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0,0,0,.6);
+}
+.t-search-result {
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.t-search-result:hover { background: rgba(57,255,20,.08); }
 
 

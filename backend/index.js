@@ -21,8 +21,8 @@ import { fetchYoutube, fetchYoutubeForSector } from './youtube.js'
 const LAYER_KEYS = ['plants', 'storage', 'projects', 'hydrogen', 'ev', 'nuclear', 'transmission', 'resource', 'policy']
 
 const toPointFeature   = (item) => ({ type: 'Feature', geometry: { type: 'Point',      coordinates: [item.lon, item.lat] },                                                 properties: { ...item } })
-const toLineFeature    = (item) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: item.path.map(([lat, lon]) => [lon, lat]) },                             properties: { id: item.id, name: item.name, capacityMW: item.capacityMW, status: item.status } })
-const toPolygonFeature = (item) => ({ type: 'Feature', geometry: { type: 'Polygon',    coordinates: [[...item.ring.map(([lat, lon]) => [lon, lat])]] },                      properties: { id: item.id, metric: item.metric, value: item.value } })
+const toLineFeature    = (item) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: item.path.map(([lat, lon]) => [lon, lat]) },                             properties: { id: item.id, name: item.name, capacityMW: item.capacityMW, status: item.status, regionTag: item.regionTag } })
+const toPolygonFeature = (item) => ({ type: 'Feature', geometry: { type: 'Polygon',    coordinates: [[...item.ring.map(([lat, lon]) => [lon, lat])]] },                      properties: { id: item.id, metric: item.metric, value: item.value, regionTag: item.regionTag } })
 
 const featureFnFor = (layer) =>
   layer === 'transmission' ? toLineFeature
@@ -222,18 +222,40 @@ app.get('/api/youtube/:sector', async (req, res) => {
   res.json(sectorYtCache[sector] || [])
 })
 
-// Search across geo layers
+// Search across geo layers + news
 app.get('/api/search', (req, res) => {
   const q = String(req.query.q || '').toLowerCase().trim()
   if (!q) return res.json([])
   const results = []
+  // Search geo facilities
   for (const layer of LAYER_KEYS) {
     for (const item of layers[layer] || []) {
       const hay = [item.id, item.name, item.sector, item.subtype, item.owner, item.status].filter(Boolean).join(' ').toLowerCase()
-      if (hay.includes(q)) results.push({ id: item.id, layer, sector: item.sector, title: item.name || item.id, coords: [item.lat, item.lon], updatedAt: item.updatedAt })
+      if (hay.includes(q)) results.push({ id: item.id, type: 'facility', layer, sector: item.sector, title: item.name || item.id, coords: [item.lat, item.lon], updatedAt: item.updatedAt })
     }
   }
-  res.json(results.slice(0, 20))
+  // Search news headlines from cached sectors
+  for (const sec of cache.sectorIntel) {
+    const searchNews = (items, category) => {
+      if (!Array.isArray(items)) return
+      for (const n of items) {
+        const hay = [n.title, n.source, n.url].filter(Boolean).join(' ').toLowerCase()
+        if (hay.includes(q)) results.push({ type: 'news', sector: sec.slug, category, title: n.title, url: n.url, source: n.source, time: n.time })
+      }
+    }
+    searchNews(sec.latestNews, 'Latest News')
+    searchNews(sec.techNews, 'Tech News')
+    if (Array.isArray(sec.products)) sec.products.forEach(p => {
+      const hay = [p.name, p.company, p.summary].filter(Boolean).join(' ').toLowerCase()
+      if (hay.includes(q)) results.push({ type: 'news', sector: sec.slug, category: 'Product', title: p.name, source: p.company })
+    })
+  }
+  // Search news tape
+  for (const n of cache.newsTape || []) {
+    const hay = [n.headline, n.source, n.tag].filter(Boolean).join(' ').toLowerCase()
+    if (hay.includes(q) && !results.some(r => r.title === n.headline)) results.push({ type: 'news', sector: n.tag, category: 'Tape', title: n.headline, source: n.source })
+  }
+  res.json(results.slice(0, 30))
 })
 
 // AI digest (context summary)
@@ -241,14 +263,45 @@ app.get('/api/ai/digest', (_req, res) => {
   const sectors = cache.sectorIntel.slice(0, 4).map((s) => ({
     slug: s.slug, score: s.score, headlines: (s.latestNews || []).slice(0, 2).map((n) => n.title),
   }))
-  res.json({ sectors, updatedAt: cache.updatedAt, layers: toCounts() })
+  const topHeadlines = sectors.flatMap((s) => s.headlines.map((h) => `[${s.slug}] ${h}`)).slice(0, 6)
+  const summary = `EnergyVerse Intel Digest — ${sectors.length} sectors tracked. Top signals: ${topHeadlines.join('; ') || 'No recent headlines.'}`
+  res.json({ summary, sectors, updatedAt: cache.updatedAt, layers: toCounts() })
+})
+
+// AI status check
+app.get('/api/ai/status', async (_req, res) => {
+  try {
+    const base = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '')
+    const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) })
+    if (r.ok) {
+      const data = await r.json()
+      const models = (data.models || []).map(m => m.name)
+      const model = process.env.OLLAMA_MODEL || models[0] || ''
+      res.json({ available: true, model, models })
+    } else {
+      res.json({ available: false, model: '', models: [] })
+    }
+  } catch {
+    res.json({ available: false, model: '', models: [] })
+  }
 })
 
 // AI Chat (Ollama streaming proxy)
 app.post('/api/chat', async (req, res) => {
   const { messages = [], context = {} } = req.body
   const ollamaUrl = resolveOllamaUrl(process.env.OLLAMA_URL)
-  const model = process.env.OLLAMA_MODEL || 'llama3'
+  // Auto-detect model: use env, or first available model
+  let model = process.env.OLLAMA_MODEL || ''
+  if (!model) {
+    try {
+      const base = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '')
+      const tagRes = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) })
+      if (tagRes.ok) {
+        const tagData = await tagRes.json()
+        model = (tagData.models || [])[0]?.name || 'llama3'
+      } else { model = 'llama3' }
+    } catch { model = 'llama3' }
+  }
   const systemPrompt = `You are an energy sector intelligence assistant embedded in the Energyverse terminal dashboard.
 Access to data: ${JSON.stringify({ sectors: (context.sectorIntel || []).slice(0, 3), headlines: (context.newsTape || []).slice(0, 8) })}.
 Be concise—terminal UI. Max 4 sentences per response.`

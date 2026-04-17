@@ -1,7 +1,7 @@
 services:
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: energyverse-api
     restart: unless-stopped
@@ -22,8 +22,8 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: Dockerfile.web
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: energyverse-web
     restart: unless-stopped
     ports:

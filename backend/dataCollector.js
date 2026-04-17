@@ -1,5 +1,7 @@
 import Parser from 'rss-parser'
 import { rankItems } from './scorer.js'
+import { getFeedsForSector, getRegionalFeeds } from './feeds.js'
+import { normalizeItem, deduplicateItems, filterRelevance, tagItems } from './pipeline.js'
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 9000)
 const OFFLINE_MODE = process.env.OFFLINE_MODE === '1'
@@ -23,6 +25,8 @@ const sectors = [
       `solar power plant commissioning MW GW after:${newsAfter}`,
       `solar energy investment funding after:${newsAfter}`,
       `rooftop solar distributed generation prosumer after:${newsAfter}`,
+      `solar farm USA IRA clean energy after:${newsAfter}`,
+      `solar PV India China Japan capacity gigawatt after:${newsAfter}`,
     ],
     tickers: ['FSLR', 'ENPH', 'TAN', 'SEDG', 'RUN'],
     reddit: 'solar photovoltaic utility scale',
@@ -36,6 +40,8 @@ const sectors = [
       `wind energy contract auction CfD after:${newsAfter}`,
       `wind power investment financing after:${newsAfter}`,
       `floating offshore wind FOWT after:${newsAfter}`,
+      `US offshore wind Atlantic project after:${newsAfter}`,
+      `wind farm China India Japan South Korea APAC after:${newsAfter}`,
     ],
     tickers: ['GEV', 'FAN', 'TPIC', 'NEE', 'VWSYF'],
     reddit: 'wind energy offshore turbine',
@@ -48,6 +54,8 @@ const sectors = [
       `pumped storage hydropower PSH after:${newsAfter}`,
       `run of river hydro plant commissioning after:${newsAfter}`,
       `hydropower investment IRENA IHA after:${newsAfter}`,
+      `hydropower USA Canada dam relicensing after:${newsAfter}`,
+      `hydropower China India Southeast Asia APAC after:${newsAfter}`,
     ],
     tickers: ['BEP', 'CWEN', 'AY', 'NEE', 'CPKF'],
     reddit: 'hydropower pumped storage hydro',
@@ -60,6 +68,8 @@ const sectors = [
       `enhanced geothermal system EGS drilling after:${newsAfter}`,
       `geothermal power capacity MW Iceland Chile after:${newsAfter}`,
       `geothermal heat pump district heating after:${newsAfter}`,
+      `geothermal USA DOE Fervo after:${newsAfter}`,
+      `geothermal Indonesia Philippines Japan APAC after:${newsAfter}`,
     ],
     tickers: ['ORA', 'CLNE', 'NFE', 'GEO', 'ALTV'],
     reddit: 'geothermal energy EGS wells',
@@ -73,6 +83,8 @@ const sectors = [
       `long duration energy storage LDES flow battery after:${newsAfter}`,
       `energy storage investment funding after:${newsAfter}`,
       `battery gigafactory manufacturing capacity GWh after:${newsAfter}`,
+      `battery storage USA California Texas IRA after:${newsAfter}`,
+      `BESS battery storage Australia Japan China APAC after:${newsAfter}`,
     ],
     tickers: ['FLNC', 'TSLA', 'LIT', 'STEM', 'ENS'],
     reddit: 'battery storage BESS grid flexibility',
@@ -86,6 +98,8 @@ const sectors = [
       `nuclear fusion tokamak ITER demo after:${newsAfter}`,
       `nuclear power investment financing after:${newsAfter}`,
       `nuclear fuel cycle uranium enrichment after:${newsAfter}`,
+      `nuclear power USA NRC DOE advanced reactor after:${newsAfter}`,
+      `nuclear power China India Japan South Korea APAC after:${newsAfter}`,
     ],
     tickers: ['CCJ', 'URA', 'BWXT', 'LEU', 'SMR'],
     reddit: 'nuclear energy SMR fission fusion',
@@ -99,6 +113,8 @@ const sectors = [
       `vehicle-to-grid V2G bidirectional charging after:${newsAfter}`,
       `electric vehicle policy incentive IRA rebate after:${newsAfter}`,
       `BYD Tesla Rivian CATL electric vehicle factory after:${newsAfter}`,
+      `EV sales USA Canada market share after:${newsAfter}`,
+      `electric vehicle China India Japan South Korea APAC after:${newsAfter}`,
     ],
     tickers: ['TSLA', 'BYDDY', 'LI', 'RIVN', 'CHPT'],
     reddit: 'electric vehicles EV battery V2G charging',
@@ -112,6 +128,8 @@ const sectors = [
       `hydrogen pipeline infrastructure export after:${newsAfter}`,
       `green hydrogen investment project funding after:${newsAfter}`,
       `blue grey hydrogen CCS carbon capture after:${newsAfter}`,
+      `hydrogen hub USA DOE clean energy after:${newsAfter}`,
+      `hydrogen Japan Australia India APAC export after:${newsAfter}`,
     ],
     tickers: ['PLUG', 'BE', 'FCEL', 'BLDP', 'NEL.OL'],
     reddit: 'hydrogen fuel cell electrolyzer green',
@@ -198,6 +216,37 @@ const toDomain = (url) => {
   }
 }
 
+// Extract real source from Google News RSS title (format: "Headline - Source Name")
+const DOMAIN_NAMES = {
+  'news.google.com': 'Google News',
+  'smithschool.ox.ac.uk': 'Oxford Smith School',
+  'energy.gov': 'US Dept of Energy',
+  'iea.org': 'IEA',
+  'irena.org': 'IRENA',
+  'eia.gov': 'US EIA',
+  'ec.europa.eu': 'European Commission',
+  'gov.uk': 'UK Government',
+}
+
+const extractSource = (title, fallbackUrl) => {
+  if (title) {
+    const parts = title.split(' - ')
+    if (parts.length >= 2) {
+      const src = parts[parts.length - 1].trim()
+      // Sanity check: source name should be short and not look like a headline
+      if (src.length > 0 && src.length < 80 && !src.includes('. ')) {
+        // If source looks like a domain, map it to a human-readable name
+        if (src.includes('.') && !src.includes(' ')) {
+          return DOMAIN_NAMES[src] || DOMAIN_NAMES[src.replace('www.', '')] || src
+        }
+        return src
+      }
+    }
+  }
+  const domain = toDomain(fallbackUrl)
+  return DOMAIN_NAMES[domain] || domain
+}
+
 const formatValue = (price, currency = 'USD') => {
   if (!Number.isFinite(price)) return 'n/a'
   if (currency === 'USD') return `$${price.toFixed(2)}`
@@ -236,12 +285,19 @@ async function fetchRss(query, limit = 8) {
   if (OFFLINE_MODE) return []
   try {
     const feed = await withTimeout(() => parser.parseURL(rssUrl(query)))
-    return (feed?.items || []).slice(0, limit).map((item) => ({
-      title: cleanText(item.title),
-      source: toDomain(item.link || item.guid || ''),
-      time: toTime(item.pubDate),
-      url: item.link || 'https://news.google.com',
-    }))
+    return (feed?.items || []).slice(0, limit).map((item) => {
+      const rawTitle = cleanText(item.title)
+      const source = extractSource(rawTitle, item.link || item.guid || '')
+      // Remove the " - Source Name" suffix from title
+      const titleParts = rawTitle.split(' - ')
+      const title = titleParts.length >= 2 ? titleParts.slice(0, -1).join(' - ').trim() : rawTitle
+      return {
+        title,
+        source,
+        time: toTime(item.pubDate),
+        url: item.link || 'https://news.google.com',
+      }
+    })
   } catch {
     return []
   }
@@ -258,6 +314,52 @@ async function fetchRssMulti(queries, limitTotal = 10) {
     seen.add(key)
     return true
   }).slice(0, limitTotal)
+}
+
+// ── Direct RSS Feed Fetcher ───────────────────────────────────────────────────
+// Fetches from curated RSS feeds (PV Magazine, Electrek, etc.) directly.
+// These are NOT Google News queries — they're the real source feeds.
+async function fetchDirectFeed(feedUrl, limit = 5) {
+  if (OFFLINE_MODE) return []
+  try {
+    const feed = await withTimeout(() => parser.parseURL(feedUrl))
+    return (feed?.items || []).slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+// Fetch from all direct feeds for a sector, normalize through pipeline
+async function fetchDirectFeeds(sectorSlug, limit = 15) {
+  if (OFFLINE_MODE) return []
+  const feeds = getFeedsForSector(sectorSlug)
+  // Fetch feeds in parallel (limit concurrency by batching)
+  const results = await Promise.allSettled(
+    feeds.map(feed => fetchDirectFeed(feed.url, 3).then(items =>
+      items.map(raw => normalizeItem(raw, feed.source, feed.region))
+    ))
+  )
+  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+  // Run through pipeline: dedup → filter → tag
+  const deduped = deduplicateItems(all)
+  const filtered = filterRelevance(deduped, sectorSlug)
+  const tagged = tagItems(filtered)
+  return tagged.slice(0, limit)
+}
+
+// Fetch regional feeds for diversity (runs less frequently)
+async function fetchRegionalNews(limit = 10) {
+  if (OFFLINE_MODE) return []
+  const feeds = getRegionalFeeds()
+  const results = await Promise.allSettled(
+    feeds.map(feed => fetchDirectFeed(feed.url, 2).then(items =>
+      items.map(raw => normalizeItem(raw, feed.source, feed.region))
+    ))
+  )
+  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+  const deduped = deduplicateItems(all)
+  const tagged = tagItems(deduped)
+  return tagged.slice(0, limit)
 }
 
 async function fetchReddit(query) {
@@ -372,7 +474,7 @@ async function fetchFinance(tickers) {
             ? ((price - previous) / previous) * 100
             : Number.NaN
 
-          const history = closes.length > 0 ? closes.slice(-8).map((value) => Number(value.toFixed(2))) : makeHistory(price, changePercent)
+          const history = closes.length >= 2 ? closes.slice(-8).map((value) => Number(value.toFixed(2))) : makeHistory(price, changePercent)
 
           const mapped = {
             metric: `${meta.shortName || symbol} (${symbol})`,
@@ -457,6 +559,7 @@ function toStartupFromNews(items) {
 
 const offlineRow = (sector) => {
   const placeholder = defaultItem(`Offline mode enabled for ${sector.slug}`)
+  const ytLinks = makeYouTubeLinks(`${sector.slug} energy news`, sector.slug)
   return {
     slug: sector.slug,
     headline: `${sector.slug} signals paused (offline)`,
@@ -466,7 +569,9 @@ const offlineRow = (sector) => {
     products: toProductFromNews([placeholder]),
     startups: toStartupFromNews([placeholder]),
     finance: [],
-    youtubeLive: makeYouTubeLinks(`${sector.slug} energy news`, sector.slug),
+    policy: [placeholder],
+    media: ytLinks,
+    youtubeLive: ytLinks,
     community: [],
   }
 }
@@ -476,24 +581,39 @@ async function buildSector(sector) {
   const baseNoDate = sector.queries.map(q => q.replace(/ after:[0-9-]+/, ''))
   const techQueries = baseNoDate.slice(0, 2).map(q => `${q} technology innovation research after:${newsAfter}`)
   const startupQueries = baseNoDate.slice(0, 2).map(q => `${q} startup funding investment after:${newsAfter}`)
+  const policyQueries = baseNoDate.slice(0, 1).map(q => `${q} policy regulation legislation government after:${newsAfter}`)
 
-  const [latestNews, techNews, startupNews, redditRows, githubRows, financeRows] = await Promise.all([
+  const [latestNews, techNews, startupNews, policyNews, directFeedItems, redditRows, githubRows, financeRows] = await Promise.all([
     fetchRssMulti(sector.queries, 12),
     fetchRssMulti(techQueries, 8),
     fetchRssMulti(startupQueries, 6),
+    fetchRssMulti(policyQueries, 4),
+    fetchDirectFeeds(sector.slug, 15),
     fetchReddit(sector.reddit),
     fetchGithub(sector.github),
     fetchFinance(sector.tickers),
   ])
 
-  const rankedLatest = rankItems([...latestNews])
-  const rankedTech = rankItems([...techNews])
+  // ── Pipeline: Merge Google News + Direct Feeds → Dedup → Rank ──────────
+  // Combine Google News results with direct feed items
+  const mergedLatest = deduplicateItems([...latestNews, ...directFeedItems])
+  const mergedTech = deduplicateItems([...techNews, ...directFeedItems.filter(
+    item => (item.categories || []).includes('technology')
+  )])
+  const mergedPolicy = deduplicateItems([...policyNews, ...directFeedItems.filter(
+    item => (item.categories || []).includes('policy')
+  )])
+
+  const rankedLatest = rankItems([...mergedLatest])
+  const rankedTech = rankItems([...mergedTech])
   const headline = rankedLatest[0]?.title || `${sector.slug} market activity update pending`
   const summary = rankedTech[0]?.title || `Collecting ${sector.slug.toLowerCase()} technology and business signals.`
 
   const products = toProductFromNews(rankedTech)
   const startups = toStartupFromNews(rankItems([...startupNews]))
+  const rankedPolicy = rankItems([...mergedPolicy])
 
+  const ytLinks = makeYouTubeLinks(`${sector.slug} energy news`, sector.slug)
   const sectorRow = {
     slug: sector.slug,
     headline,
@@ -503,7 +623,9 @@ async function buildSector(sector) {
     products: products.length ? products : toProductFromNews([defaultItem(`No ${sector.slug.toLowerCase()} product stories yet`)]),
     startups: startups.length ? startups : toStartupFromNews([defaultItem(`No ${sector.slug.toLowerCase()} startup stories yet`)]),
     finance: financeRows,
-    youtubeLive: makeYouTubeLinks(`${sector.slug} energy news`, sector.slug),
+    policy: rankedPolicy.length ? rankedPolicy : [defaultItem(`No ${sector.slug.toLowerCase()} policy updates yet`)],
+    media: ytLinks,
+    youtubeLive: ytLinks,
     community: [...redditRows, ...githubRows],
   }
 

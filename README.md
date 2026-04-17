@@ -1,51 +1,76 @@
-# EnergyVerse Monitor
+# EnergyVerse
 
-Bloomberg-style renewables + nuclear intelligence dashboard with live feed ingestion.
+Bloomberg-terminal-style real-time intelligence dashboard for the global energy transition — renewables, nuclear, EVs, hydrogen, and storage.
 
-## What it includes
+Built with React + Vite + Express + WebSocket. No API keys required.
 
-- Sector subsections: Solar, Wind, Hydro, Geothermal, Storage, Nuclear, EV, Hydrogen
-- Under each section: latest news, tech news, new products, startup signals, finance/stocks, YouTube live links, Reddit/GitHub conversation topics
-- Top-level policy, market pulse, emissions/impact, business signals, project changes, and scrolling news tape
-- Map layers: plants, storage, projects, hydrogen hubs, EV/V2G sites, nuclear newbuilds, transmission lines, resource tiles, policy pins, intel topics
+## Project Structure
 
-## Run locally
+```
+energyverse/
+├── claude.md              # AI context / project spec
+├── README.md              # This file
+├── docker-compose.yml     # Orchestrates frontend + backend
+├── package.json           # Root dev scripts (concurrently)
+├── frontend/              # React + Vite + TypeScript
+│   ├── Dockerfile         # Multi-stage: Vite build → nginx
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── index.html
+│   ├── nginx/default.conf
+│   └── src/
+│       ├── App.tsx        # Main React component
+│       ├── App.css        # Terminal theme CSS
+│       └── data/energyData.ts
+└── backend/               # Express 5 + WebSocket API
+    ├── Dockerfile         # Node 22 Alpine
+    ├── package.json
+    ├── index.js           # Express server + cron + Ollama proxy
+    ├── dataCollector.js   # RSS/Finance/Reddit/GitHub aggregation
+    ├── scorer.js          # Priority scoring algorithm
+    ├── layers.js          # 90+ geo facility seeds
+    └── youtube.js         # YouTube channel RSS
+```
+
+## Run Locally
 
 ```bash
-npm install
+# Install all dependencies
+npm run install:all
+
+# Start frontend + backend together
 npm run dev
 ```
 
-This runs both:
+- **Frontend**: http://localhost:2700
+- **API**: http://localhost:8788
 
-- Frontend (Vite): http://localhost:5173 (auto-shifts to 5174 if busy)
-- Backend API (Express): http://localhost:8788 (configurable via `PORT`)
-
-## Useful commands
+### With Ollama AI Chat
 
 ```bash
-# frontend + backend together
+ollama serve        # separate terminal
+ollama pull llama3
 npm run dev
-
-# backend only (honors PORT)
-PORT=8788 npm run start:api
-
-# production build (frontend)
-npm run build
-
-# preview production build
-npm run preview
 ```
 
-## Live data sources (no API keys required)
+### Docker
+
+```bash
+docker compose up --build
+```
+
+- **Web**: http://localhost:8081
+- **API**: http://localhost:8789
+
+## Live Data Sources (no API keys)
 
 - Google News RSS (sector and topic queries)
 - Yahoo Finance quote endpoint (ticker snapshots)
 - Reddit search JSON (recent discussion topics)
 - GitHub issue search API (active technical conversations)
-- YouTube live search links (sector-specific)
+- YouTube channel RSS (48+ channels)
 
-## Refresh behavior
+## Refresh Behavior
 
 - API cache refreshes on startup and every 15 minutes
 - Frontend polls `/api/dashboard` every 3 minutes

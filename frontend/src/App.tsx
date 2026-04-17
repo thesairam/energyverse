@@ -608,7 +608,7 @@ function App() {
   const [mapSectorFilter, setMapSectorFilter] = useState<SectorIntel['slug'] | null>(null)
   const [layerToggles, setLayerToggles] = useState<Record<LayerKey, boolean>>({
     plants: true, storage: true, projects: true, hydrogen: true,
-    ev: true, nuclear: true, transmission: false, resource: false, policy: true, topics: false,
+    ev: true, nuclear: true, transmission: false, resource: false, policy: true, topics: true,
   })
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
@@ -623,6 +623,9 @@ function App() {
   const [apiGeoLayers, setApiGeoLayers] = useState<ApiGeoLayers>({})
   const [youtubeVideos, setYoutubeVideos] = useState<YoutubeVideo[]>([])
   const [sectorYoutube, setSectorYoutube] = useState<Record<string, YoutubeVideo[]>>({})
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [ollamaStatus, setOllamaStatus] = useState<'unknown' | 'online' | 'offline'>('unknown')
 
   const sectorOrder: SectorIntel['slug'][] = ['Solar', 'Wind', 'Hydro', 'Geothermal', 'Storage', 'Nuclear', 'EV', 'Hydrogen']
   const orderedSectors = [...liveSectorIntel].sort((a, b) => sectorOrder.indexOf(a.slug) - sectorOrder.indexOf(b.slug))
@@ -717,6 +720,10 @@ function App() {
           const gr = await fetch('/api/geo/all')
           if (gr.ok) { const gd = await gr.json(); if (mounted) setApiGeoLayers(gd) }
         } catch {/**/}
+        try {
+          const aiR = await fetch('/api/ai/status')
+          if (aiR.ok) { const ad = await aiR.json(); if (mounted) setOllamaStatus(ad.available ? 'online' : 'offline') }
+        } catch { if (mounted) setOllamaStatus('offline') }
       } catch { if (mounted) setApiStatus('offline') }
     }
     void fetch_()
@@ -855,10 +862,46 @@ function App() {
       })
     }
 
+    // Resource polygons
+    let resGroup = layerGroupsRef.current['resource']
+    if (!resGroup) { resGroup = L.layerGroup().addTo(map); layerGroupsRef.current['resource'] = resGroup }
+    resGroup.clearLayers()
+    if (layerToggles.resource) {
+      ;(filteredGeo.resource as any).features?.forEach((f: any) => {
+        if (f.geometry?.type !== 'Polygon') return
+        const latlngs = f.geometry.coordinates[0].map(([lon, lat]: number[]) => [lat, lon] as L.LatLngTuple)
+        L.polygon(latlngs, { color: '#39ff14', weight: 1, fillOpacity: 0.1 })
+          .bindPopup(`<div class="mv-popup"><strong>${f.properties?.metric || 'Resource Zone'}</strong><br/>${f.properties?.value || ''}</div>`, { className: 'leaflet-dark-popup' })
+          .addTo(resGroup!)
+      })
+    }
+
     const counts = Object.entries(filteredGeo).reduce<Record<string, number>>((a, [k, v]) => { a[k] = (v as any).features?.length ?? 0; return a }, {})
     const summary = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(' · ')
     setAiSummary(summary || 'No features in current filter')
   }, [mapReady, filteredGeo, layerToggles])
+
+  // Search
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return }
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`)
+        if (r.ok) setSearchResults(await r.json())
+      } catch { setSearchResults([]) }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  const flyToResult = (result: any) => {
+    if (result.type === 'news' && result.url) {
+      window.open(result.url, '_blank')
+    } else if (mapRef.current && result.coords) {
+      mapRef.current.flyTo([result.coords[0], result.coords[1]], 6)
+    }
+    setSearchQuery('')
+    setSearchResults([])
+  }
 
   // AI Chat
   const sendChat = async () => {
@@ -894,7 +937,6 @@ function App() {
     } finally { setChatStreaming(false) }
   }
 
-  const sectorTabs = orderedSectors.map(s => s.slug)
   const currentSectorVideos = activeSectorData ? (sectorYoutube[activeSectorData.slug] || youtubeVideos) : []
   const mapSectorBtnStyle = (slug: SectorIntel['slug']) =>
     mapSectorFilter === slug ? { color: sectorColors[slug], borderColor: sectorColors[slug], background: 'rgba(255,255,255,0.05)' } : {}
@@ -917,6 +959,34 @@ function App() {
           <option value="All">— All Countries —</option>
           {countriesForRegion.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
         </select>
+        <span className="t-topbar-sep">│</span>
+        <span className={`t-status ${ollamaStatus === 'online' ? 'online' : 'offline'}`}><span className="t-dot" />AI:{ollamaStatus === 'online' ? 'ON' : ollamaStatus === 'offline' ? 'OFF' : '...'}</span>
+        <span className="t-topbar-sep">│</span>
+        <div className="t-search-wrap">
+          <input className="t-search" placeholder="⌕ Search facilities…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          {searchResults.length > 0 && (
+            <div className="t-search-dropdown">
+              {searchResults.map((r: any, i: number) => (
+                <div key={i} className="t-search-result" onClick={() => flyToResult(r)}>
+                  {r.type === 'news' ? (
+                    <>
+                      <span className="tw-amber">[{r.category}]</span>
+                      <span className="tw-green"> {r.title}</span>
+                      {r.source && <span className="tw-dim"> · {r.source}</span>}
+                      {r.sector && <span className="tw-cyan"> [{r.sector}]</span>}
+                    </>
+                  ) : (
+                    <>
+                      <span className="tw-dim">[{r.layer}]</span>
+                      <span className="tw-green"> {r.title}</span>
+                      {r.sector && <span className="tw-amber"> {r.sector}</span>}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <span className="t-topbar-right t-dim">SECTORS:{orderedSectors.length} │ COUNTRIES:{COUNTRY_LIST.length}</span>
       </div>
 
@@ -956,14 +1026,16 @@ function App() {
             </div>
           </div>
           <div className="map-sector-filter-row">
-            <span className="tw-dim map-filter-label">SECTOR FILTER</span>
-            <button className={`t-tab t-tab-sm ${!mapSectorFilter ? 'active' : ''}`} onClick={() => setMapSectorFilter(null)}>ALL</button>
+            <span className="tw-dim map-filter-label">SECTOR</span>
+            <button className={`t-tab t-tab-sm ${!mapSectorFilter && activeTab !== 'CHAT' ? 'active' : ''}`} onClick={() => { setMapSectorFilter(null); if (activeTab === 'CHAT') setActiveTab('Solar') }}>ALL</button>
             {orderedSectors.map(s => (
               <button key={s.slug} className={`t-tab t-tab-sm ${mapSectorFilter === s.slug ? 'active' : ''}`}
-                style={mapSectorBtnStyle(s.slug)} onClick={() => setMapSectorFilter(mapSectorFilter === s.slug ? null : s.slug)}>
+                style={mapSectorBtnStyle(s.slug)} onClick={() => { setMapSectorFilter(mapSectorFilter === s.slug ? null : s.slug); setActiveTab(s.slug as ActiveTab) }}>
                 {s.slug}
               </button>
             ))}
+            <span className="t-topbar-sep">│</span>
+            <button className={`t-tab t-tab-sm t-tab-chat ${activeTab === 'CHAT' ? 'active' : ''}`} onClick={() => setActiveTab('CHAT')}>⚡ AI CHAT</button>
           </div>
           {mapError && <div className="t-map-error">{mapError}</div>}
           <div className="t-map-container" id="globe-map" />
@@ -984,24 +1056,7 @@ function App() {
         </div>
       </div>
 
-      {/* ── Sector tabs ── */}
-      <div className="t-tabs">
-        <div className="t-tabs-sectors">
-          {sectorTabs.map(slug => (
-            <button key={slug} className={`t-tab ${activeTab === slug ? 'active' : ''}`}
-              style={activeTab === slug ? { color: sectorColors[slug as SectorIntel['slug']], borderColor: sectorColors[slug as SectorIntel['slug']] } : {}}
-              onClick={() => setActiveTab(slug as ActiveTab)}>
-              {slug}
-            </button>
-          ))}
-        </div>
-        <div className="t-tabs-divider">│</div>
-        <div className="t-tabs-global">
-          <button className={`t-tab t-tab-global ${activeTab === 'CHAT' ? 'active' : ''}`} onClick={() => setActiveTab('CHAT')}>
-            AI CHAT
-          </button>
-        </div>
-      </div>
+
 
       {/* ── Sector + Chat content ── */}
       <main className="t-main">
