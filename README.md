@@ -43,7 +43,7 @@ npm run dev
 ```
 
 - **Frontend**: http://localhost:2700
-- **API**: http://localhost:8788
+- **API**: http://localhost:8789
 
 ### With Ollama AI Chat
 
@@ -59,7 +59,7 @@ npm run dev
 docker compose up --build
 ```
 
-- **Web**: http://localhost:8081
+- **Web**: http://localhost:2700
 - **API**: http://localhost:8789
 
 ## Live Data Sources (no API keys)

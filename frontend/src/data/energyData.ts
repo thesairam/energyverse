@@ -115,6 +115,8 @@ export type SectorIntel = {
   products: ProductItem[]
   startups: StartupItem[]
   finance: FinanceItem[]
+  policy?: LinkItem[]
+  media?: LinkItem[]
   youtubeLive: LinkItem[]
   community: CommunityItem[]
 }

@@ -77,12 +77,12 @@ Each sector has a dedicated 8-panel grid:
 │       └─────────────┴───────┬───┴──────────────┘         │
 │                             │                            │
 │                    Vite Dev Server (:2700)                │
-│                      proxy /api → :8788                  │
-│                      proxy /stream → ws://:8788          │
+│                      proxy /api → :8789                  │
+│                      proxy /stream → ws://:8789          │
 └─────────────────────────────┬───────────────────────────┘
                               │
 ┌─────────────────────────────┴───────────────────────────┐
-│                 Express API Server (:8788)                │
+│                 Express API Server (:8789)                │
 │                                                          │
 │  ┌────────────────┐  ┌──────────┐  ┌──────────────────┐  │
 │  │ dataCollector   │  │ scorer   │  │  youtube         │  │
@@ -202,14 +202,14 @@ npm run dev
 docker compose up --build
 ```
 
-- **Web**: http://localhost:8081
+- **Web**: http://localhost:2700
 - **API**: http://localhost:8789
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8788` | API server port |
+| `PORT` | `8789` | API server port |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama base URL |
 | `OLLAMA_MODEL` | `llama3` | LLM model name |
 | `OFFLINE_MODE` | — | Skip external fetches, use seed data |

@@ -8,11 +8,11 @@ export default defineConfig({
     port: 2700,
     proxy: {
       '/api': {
-        target: 'http://localhost:8788',
+        target: 'http://localhost:8789',
         changeOrigin: true,
       },
       '/stream': {
-        target: 'ws://localhost:8788',
+        target: 'ws://localhost:8789',
         ws: true,
       },
     },

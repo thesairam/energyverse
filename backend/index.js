@@ -129,7 +129,7 @@ const resolveOllamaUrl = (value) => {
 const app = express()
 app.use(express.json())
 
-const PORT = Number(process.env.PORT || 8788)
+const PORT = Number(process.env.PORT || 8789)
 const server = createServer(app)
 
 // ── WebSocket server ──────────────────────────────────────────────────────────

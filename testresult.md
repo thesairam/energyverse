@@ -2,7 +2,7 @@
 
 > Generated from execution of `test.md` test plan  
 > Test Date: 2025-07-25 (Updated: latest run)  
-> Backend: Express on port 8788 | Frontend: Vite 7.3.2
+> Backend: Express on port 8789 | Frontend: Vite 7.3.2
 
 ---
 

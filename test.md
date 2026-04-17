@@ -921,10 +921,10 @@ docker compose down
 ```bash
 docker compose up -d
 # API should NOT be accessible on port 8788 from host (only 8789 mapped)
-# Web should serve on 8081
+# Web should serve on 2700
 
 # Verify services can communicate via internal network
-docker exec energyverse-web wget -qO- http://api:8788/api/health
+docker exec energyverse-web wget -qO- http://api:8789/api/health
 docker compose down
 ```
 
