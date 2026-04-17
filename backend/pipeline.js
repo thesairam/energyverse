@@ -76,25 +76,25 @@ export function deduplicateItems(items) {
   return items.filter(item => {
     // 1. URL normalization
     const normUrl = canonicalUrl(item.url)
-    if (normUrl && normUrl !== 'news.google.com' && seen.has('url:' + normUrl)) {
+    if (normUrl && normUrl !== 'news.google.com' && seen.has(`url:${normUrl}`)) {
       return false
     }
 
     // 2. Content hashing
-    if (item._contentHash && seen.has('hash:' + item._contentHash)) {
+    if (item._contentHash && seen.has(`hash:${item._contentHash}`)) {
       return false
     }
 
     // 3. Title similarity (fuzzy: first 50 chars, alphanumeric only)
     const titleKey = (item.title || '').slice(0, 50).toLowerCase().replace(/[^a-z0-9]/g, '')
-    if (titleKey.length > 10 && seen.has('title:' + titleKey)) {
+    if (titleKey.length > 10 && seen.has(`title:${titleKey}`)) {
       return false
     }
 
     // Mark as seen
-    if (normUrl) seen.set('url:' + normUrl, true)
-    if (item._contentHash) seen.set('hash:' + item._contentHash, true)
-    if (titleKey.length > 10) seen.set('title:' + titleKey, true)
+    if (normUrl) seen.set(`url:${normUrl}`, true)
+    if (item._contentHash) seen.set(`hash:${item._contentHash}`, true)
+    if (titleKey.length > 10) seen.set(`title:${titleKey}`, true)
 
     return true
   })
@@ -121,7 +121,7 @@ const FALSE_POSITIVES = [
 // Sector keywords for relevance matching
 const SECTOR_KEYWORDS = {
   Solar: ['solar', 'photovoltaic', 'pv ', 'pv-', 'rooftop', 'sunpower', 'longi', 'jinko', 'trina', 'first solar', 'enphase', 'solaredge', 'nrel'],
-  Wind: ['wind', 'turbine', 'offshore wind', 'onshore wind', 'vestas', 'siemens gamesa', 'floating wind', 'wind farm', 'gwec'],
+  Wind: ['wind', 'turbine', 'offshore wind', 'onshore wind', 'vestas', 'siemens gamesa', 'ørsted', 'orsted', 'floating wind', 'wind farm', 'gwec'],
   Hydro: ['hydro', 'hydropower', 'hydroelectric', 'dam ', 'pumped storage', 'run of river', 'tidal', 'wave energy'],
   Geothermal: ['geothermal', 'egs', 'enhanced geothermal', 'fervo', 'heat pump', 'geotherm'],
   Storage: ['battery', 'storage', 'bess', 'lithium', 'lfp', 'nmc', 'solid state battery', 'flow battery', 'energy storage', 'catl', 'gigafactory', 'ldes'],
@@ -141,7 +141,7 @@ const ENERGY_KEYWORDS = [
   'pv', 'photovoltaic', 'fuel cell', 'electrolyzer', 'reactor', 'smr',
 ]
 
-// Known energy sources -- items from these always pass relevance filter
+// Known energy sources — items from these always pass relevance filter
 const KNOWN_ENERGY_SOURCES = new Set([
   'pv magazine', 'pv tech', 'cleantechnica', 'electrek', 'renewable energy world',
   'energy storage news', 'recharge news', 'renewables now', 'solar power world',
@@ -162,18 +162,18 @@ export function filterRelevance(items, sectorSlug) {
   const sectorKws = SECTOR_KEYWORDS[sectorSlug] || []
 
   return items.filter(item => {
-    const text = (item.title + ' ' + item.description).toLowerCase()
+    const text = `${item.title} ${item.description}`.toLowerCase()
 
     // Reject false positives first (strategy.md: remove "solar flare" etc.)
     if (FALSE_POSITIVES.some(fp => text.includes(fp))) return false
 
-    // Sector-specific keywords -> always relevant
+    // Sector-specific keywords → always relevant
     if (sectorKws.some(kw => text.includes(kw))) return true
 
-    // General energy keywords -> relevant
+    // General energy keywords → relevant
     if (ENERGY_KEYWORDS.some(kw => text.includes(kw))) return true
 
-    // From a known energy source -> trust it
+    // From a known energy source → trust it
     if (item.source && KNOWN_ENERGY_SOURCES.has(item.source.toLowerCase())) return true
 
     return false
@@ -189,7 +189,8 @@ export function filterRelevance(items, sectorSlug) {
 //   - Geography: country, region
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const REGION_KEYWORDS = {
+// Region keywords for geographic tagging
+export const REGION_KEYWORDS = {
   NAM: ['us ', 'usa', 'united states', 'america', 'canada', 'mexico', 'texas', 'california', 'doe', 'ferc', 'ira ', 'congress'],
   EMEA: ['europe', 'eu ', 'uk ', 'britain', 'germany', 'france', 'spain', 'italy', 'netherlands', 'norway', 'denmark', 'sweden', 'finland', 'ireland', 'scotland', 'portugal'],
   APAC: ['china', 'india', 'japan', 'korea', 'australia', 'indonesia', 'vietnam', 'thailand', 'taiwan', 'singapore', 'asean', 'asia', 'pacific'],
@@ -197,6 +198,7 @@ const REGION_KEYWORDS = {
   LATAM: ['brazil', 'chile', 'argentina', 'colombia', 'mexico', 'latin america', 'caribbean', 'peru'],
 }
 
+// Subtopic patterns (strategy.md §5)
 const SUBTOPIC_PATTERNS = {
   policy: ['policy', 'regulation', 'legislation', 'government', 'subsidy', 'tariff', 'incentive', 'mandate', 'standard', 'compliance', 'permit', 'approval', 'ban', 'tax credit'],
   project: ['project', 'plant', 'farm', 'facility', 'commission', 'construction', 'operational', 'capacity', 'mw', 'gw', 'megawatt', 'gigawatt'],
@@ -208,22 +210,31 @@ const SUBTOPIC_PATTERNS = {
  * Auto-tag a single item with domains, subtopics, and geography (strategy.md §5).
  */
 export function tagItem(item) {
-  const text = (item.title + ' ' + (item.description || '')).toLowerCase()
+  const text = `${item.title} ${item.description}`.toLowerCase()
 
   const domains = []
   const subtopics = []
   const regions = []
 
+  // Tag domains (sectors)
   for (const [sector, keywords] of Object.entries(SECTOR_KEYWORDS)) {
-    if (keywords.some(kw => text.includes(kw))) domains.push(sector)
+    if (keywords.some(kw => text.includes(kw))) {
+      domains.push(sector)
+    }
   }
 
+  // Tag subtopics
   for (const [subtopic, patterns] of Object.entries(SUBTOPIC_PATTERNS)) {
-    if (patterns.some(p => text.includes(p))) subtopics.push(subtopic)
+    if (patterns.some(p => text.includes(p))) {
+      subtopics.push(subtopic)
+    }
   }
 
+  // Tag geography
   for (const [region, keywords] of Object.entries(REGION_KEYWORDS)) {
-    if (keywords.some(kw => text.includes(kw))) regions.push(region)
+    if (keywords.some(kw => text.includes(kw))) {
+      regions.push(region)
+    }
   }
   if (item.feedRegion && item.feedRegion !== 'Global' && !regions.includes(item.feedRegion)) {
     regions.push(item.feedRegion)
@@ -244,18 +255,19 @@ export function tagItems(items) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// FULL PIPELINE (§2 -> §5, ranking handled by scorer.js §6)
+// FULL PIPELINE (§2 → §5, ranking handled by scorer.js §6)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Run the full pipeline: normalize -> dedup -> filter -> tag.
+ * Run the full pipeline: normalize → dedup → filter → tag.
  * Ranking (§6) is handled separately by scorer.js.
  */
 export function processPipeline(rawItems, sectorSlug, feedSource, feedRegion) {
   const normalized = rawItems.map(raw => normalizeItem(raw, feedSource, feedRegion))
   const deduped = deduplicateItems(normalized)
   const filtered = filterRelevance(deduped, sectorSlug)
-  return tagItems(filtered)
+  const tagged = tagItems(filtered)
+  return tagged
 }
 
 /**
@@ -273,6 +285,7 @@ function stripHtml(value) {
   return (value || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
 }
 
+/** Remove tracking params for cleaner URL comparison */
 function cleanUrl(url) {
   try {
     const u = new URL(url)
@@ -285,17 +298,19 @@ function cleanUrl(url) {
   }
 }
 
+/** Canonical URL for dedup comparison */
 function canonicalUrl(url) {
   try {
     const u = new URL(url)
-    return (u.hostname + u.pathname).replace(/\/+$/, '').toLowerCase()
+    return `${u.hostname}${u.pathname}`.replace(/\/+$/, '').toLowerCase()
   } catch {
     return ''
   }
 }
 
+/** Content hash for dedup (strategy.md §3) */
 function contentHash(title, url) {
-  const input = (title + '|' + canonicalUrl(url)).toLowerCase()
+  const input = `${title}|${canonicalUrl(url)}`.toLowerCase()
   return createHash('md5').update(input).digest('hex').slice(0, 12)
 }
 
@@ -306,6 +321,7 @@ function formatTime(isoDate) {
   return parsed.toUTCString().slice(17, 22) + ' UTC'
 }
 
+/** Simple language hint from character ranges */
 function detectLanguage(text) {
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh'
   if (/[\u3040-\u30ff]/.test(text)) return 'ja'

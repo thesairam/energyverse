@@ -190,7 +190,7 @@ const layerLabels: Record<LayerKey, string> = {
 }
 
 const nowIso = new Date().toISOString().slice(0, 10)
-const MAX_TOPICS = 80
+const MAX_TOPICS = 120
 
 const layerData: {
   plants: BasePoint[]; storage: BasePoint[]; projects: BasePoint[]; hydrogen: BasePoint[]
@@ -659,6 +659,8 @@ function App() {
       sec.latestNews.forEach((i: any, idx: number) => add('Latest', idx, i.title, i.source, i.region))
       sec.techNews.forEach((i: any, idx: number) => add('Tech', idx + 20, i.title, i.source, i.region))
       sec.products.forEach((i: any, idx: number) => add('Product', idx + 40, (i as any).name, (i as any).company, (i as any).region))
+      sec.policy?.forEach((i: any, idx: number) => add('Policy', idx + 60, i.title, i.source, i.region))
+      sec.startups?.forEach((i: any, idx: number) => add('Startup', idx + 80, (i as any).event || (i as any).name, (i as any).region || 'Global', (i as any).region))
     })
 
     const useApi = Object.keys(apiGeoLayers).length > 0

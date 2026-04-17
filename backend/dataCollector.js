@@ -1,12 +1,21 @@
 import Parser from 'rss-parser'
 import { rankItems } from './scorer.js'
 import { getFeedsForSector, getRegionalFeeds } from './feeds.js'
-import { normalizeItem, deduplicateItems, filterRelevance, tagItems } from './pipeline.js'
+import { normalizeItem, deduplicateItems, filterRelevance, tagItems, REGION_KEYWORDS } from './pipeline.js'
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 9000)
 const OFFLINE_MODE = process.env.OFFLINE_MODE === '1'
 
 const parser = new Parser({ timeout: DEFAULT_TIMEOUT_MS })
+
+// Detect region from text using pipeline's REGION_KEYWORDS
+function detectRegion(text) {
+  const lower = (text || '').toLowerCase()
+  for (const [region, keywords] of Object.entries(REGION_KEYWORDS)) {
+    if (keywords.some(kw => lower.includes(kw))) return region
+  }
+  return 'Global'
+}
 
 // Date after which we consider news recent (last 45 days rolling)
 const newsAfter = (() => {
@@ -296,6 +305,7 @@ async function fetchRss(query, limit = 8) {
         source,
         time: toTime(item.pubDate),
         url: item.link || 'https://news.google.com',
+        region: detectRegion(title + ' ' + (item.contentSnippet || '')),
       }
     })
   } catch {
@@ -544,13 +554,14 @@ function toProductFromNews(items) {
     summary: item.title,
     status: 'Tracking',
     url: item.url,
+    region: item.region || 'Global',
   }))
 }
 
 function toStartupFromNews(items) {
   return items.slice(0, 2).map((item, index) => ({
     name: `Startup Signal ${index + 1}`,
-    region: 'Global',
+    region: item.region || 'Global',
     event: item.title,
     value: item.time,
     url: item.url,
@@ -583,26 +594,35 @@ async function buildSector(sector) {
   const startupQueries = baseNoDate.slice(0, 2).map(q => `${q} startup funding investment after:${newsAfter}`)
   const policyQueries = baseNoDate.slice(0, 1).map(q => `${q} policy regulation legislation government after:${newsAfter}`)
 
-  const [latestNews, techNews, startupNews, policyNews, directFeedItems, redditRows, githubRows, financeRows] = await Promise.all([
+  const [latestNews, techNews, startupNews, policyNews, directFeedItems, regionalItems, redditRows, githubRows, financeRows] = await Promise.all([
     fetchRssMulti(sector.queries, 12),
     fetchRssMulti(techQueries, 8),
     fetchRssMulti(startupQueries, 6),
     fetchRssMulti(policyQueries, 4),
     fetchDirectFeeds(sector.slug, 15),
+    fetchRegionalNews(8),
     fetchReddit(sector.reddit),
     fetchGithub(sector.github),
     fetchFinance(sector.tickers),
   ])
 
-  // ── Pipeline: Merge Google News + Direct Feeds → Dedup → Rank ──────────
-  // Combine Google News results with direct feed items
-  const mergedLatest = deduplicateItems([...latestNews, ...directFeedItems])
-  const mergedTech = deduplicateItems([...techNews, ...directFeedItems.filter(
+  // ── Pipeline: Merge Google News + Direct Feeds + Regional → Dedup → Rank ──
+  // Ensure every item has a .region for map placement
+  const ensureRegion = (items) => items.map(item => {
+    if (!item.region) {
+      item.region = (item.regions && item.regions[0]) || item.feedRegion || detectRegion(item.title) || 'Global'
+    }
+    return item
+  })
+
+  // Combine Google News results with direct feed items + regional feeds
+  const mergedLatest = ensureRegion(deduplicateItems([...latestNews, ...directFeedItems, ...regionalItems]))
+  const mergedTech = ensureRegion(deduplicateItems([...techNews, ...directFeedItems.filter(
     item => (item.categories || []).includes('technology')
-  )])
-  const mergedPolicy = deduplicateItems([...policyNews, ...directFeedItems.filter(
+  )]))
+  const mergedPolicy = ensureRegion(deduplicateItems([...policyNews, ...directFeedItems.filter(
     item => (item.categories || []).includes('policy')
-  )])
+  )]))
 
   const rankedLatest = rankItems([...mergedLatest])
   const rankedTech = rankItems([...mergedTech])
@@ -610,7 +630,7 @@ async function buildSector(sector) {
   const summary = rankedTech[0]?.title || `Collecting ${sector.slug.toLowerCase()} technology and business signals.`
 
   const products = toProductFromNews(rankedTech)
-  const startups = toStartupFromNews(rankItems([...startupNews]))
+  const startups = toStartupFromNews(ensureRegion(rankItems([...startupNews])))
   const rankedPolicy = rankItems([...mergedPolicy])
 
   const ytLinks = makeYouTubeLinks(`${sector.slug} energy news`, sector.slug)
