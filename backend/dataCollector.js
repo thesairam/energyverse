@@ -1,6 +1,6 @@
 import Parser from 'rss-parser'
 import { rankItems } from './scorer.js'
-import { getFeedsForSector, getRegionalFeeds } from './feeds.js'
+import { getFeedsForSector, getRegionalFeeds, getGoogleNewsFeeds, getBingNewsFeeds } from './feeds.js'
 import { normalizeItem, deduplicateItems, filterRelevance, tagItems, REGION_KEYWORDS } from './pipeline.js'
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 9000)
@@ -17,10 +17,10 @@ function detectRegion(text) {
   return 'Global'
 }
 
-// Date after which we consider news recent (last 45 days rolling)
+// Date after which we consider news recent (last 30 days rolling)
 const newsAfter = (() => {
   const d = new Date()
-  d.setDate(d.getDate() - 45)
+  d.setDate(d.getDate() - 30)
   return d.toISOString().slice(0, 10) // YYYY-MM-DD
 })()
 
@@ -326,6 +326,50 @@ async function fetchRssMulti(queries, limitTotal = 10) {
   }).slice(0, limitTotal)
 }
 
+// Fetch from any RSS feed URL with region hint
+async function fetchFeedUrl(feedUrl, region = 'Global', limit = 5) {
+  if (OFFLINE_MODE) return []
+  try {
+    const feed = await withTimeout(() => parser.parseURL(feedUrl))
+    return (feed?.items || []).slice(0, limit).map(item => {
+      const rawTitle = cleanText(item.title)
+      const source = extractSource(rawTitle, item.link || item.guid || '')
+      const titleParts = rawTitle.split(' - ')
+      const title = titleParts.length >= 2 ? titleParts.slice(0, -1).join(' - ').trim() : rawTitle
+      // Use content to detect more precise region, fall back to feed-level region
+      const detected = detectRegion(title + ' ' + (item.contentSnippet || ''))
+      return {
+        title,
+        source,
+        time: toTime(item.pubDate),
+        url: item.link || '',
+        region: detected !== 'Global' ? detected : region,
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+// Fetch multi-region Google News + Bing News for a sector
+async function fetchMultiRegionNews(sectorSlug, limit = 20) {
+  if (OFFLINE_MODE) return []
+  const gnewsFeeds = getGoogleNewsFeeds(sectorSlug, 12)
+  const bingFeeds = getBingNewsFeeds(sectorSlug)
+  const allFeeds = [...gnewsFeeds, ...bingFeeds]
+  const results = await Promise.allSettled(
+    allFeeds.map(f => fetchFeedUrl(f.url, f.region, 4))
+  )
+  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+  const seen = new Set()
+  return all.filter(item => {
+    const key = item.title.slice(0, 60).toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, limit)
+}
+
 // ── Direct RSS Feed Fetcher ───────────────────────────────────────────────────
 // Fetches from curated RSS feeds (PV Magazine, Electrek, etc.) directly.
 // These are NOT Google News queries — they're the real source feeds.
@@ -594,13 +638,14 @@ async function buildSector(sector) {
   const startupQueries = baseNoDate.slice(0, 2).map(q => `${q} startup funding investment after:${newsAfter}`)
   const policyQueries = baseNoDate.slice(0, 1).map(q => `${q} policy regulation legislation government after:${newsAfter}`)
 
-  const [latestNews, techNews, startupNews, policyNews, directFeedItems, regionalItems, redditRows, githubRows, financeRows] = await Promise.all([
-    fetchRssMulti(sector.queries, 12),
-    fetchRssMulti(techQueries, 8),
-    fetchRssMulti(startupQueries, 6),
-    fetchRssMulti(policyQueries, 4),
-    fetchDirectFeeds(sector.slug, 15),
-    fetchRegionalNews(8),
+  const [latestNews, techNews, startupNews, policyNews, directFeedItems, regionalItems, multiRegionNews, redditRows, githubRows, financeRows] = await Promise.all([
+    fetchRssMulti(sector.queries, 18),
+    fetchRssMulti(techQueries, 12),
+    fetchRssMulti(startupQueries, 8),
+    fetchRssMulti(policyQueries, 6),
+    fetchDirectFeeds(sector.slug, 20),
+    fetchRegionalNews(12),
+    fetchMultiRegionNews(sector.slug, 25),
     fetchReddit(sector.reddit),
     fetchGithub(sector.github),
     fetchFinance(sector.tickers),
@@ -615,8 +660,8 @@ async function buildSector(sector) {
     return item
   })
 
-  // Combine Google News results with direct feed items + regional feeds
-  const mergedLatest = ensureRegion(deduplicateItems([...latestNews, ...directFeedItems, ...regionalItems]))
+  // Combine Google News results with direct feed items + regional feeds + multi-region news
+  const mergedLatest = ensureRegion(deduplicateItems([...latestNews, ...directFeedItems, ...regionalItems, ...multiRegionNews]))
   const mergedTech = ensureRegion(deduplicateItems([...techNews, ...directFeedItems.filter(
     item => (item.categories || []).includes('technology')
   )]))

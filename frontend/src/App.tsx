@@ -148,10 +148,16 @@ COUNTRY_LIST.forEach(c => { regionGroups[c.name] = [] })
 const normalizeRegionLabel = (value?: string | Region): string => {
   if (!value) return 'Global'
   const aliases: Record<string, string> = {
-    us: 'USA', usa: 'USA', 'united states': 'USA', america: 'NAM',
-    eu: 'EMEA', europe: 'EMEA', 'united kingdom': 'UK', gb: 'UK',
-    deutschland: 'Germany', prc: 'China', 'south korea': 'South Korea', rok: 'South Korea',
-    'republic of korea': 'South Korea',
+    us: 'USA', usa: 'USA', 'united states': 'USA', america: 'USA',
+    nam: 'USA', 'north america': 'USA',
+    eu: 'EMEA', europe: 'EMEA', 'european union': 'EMEA',
+    'united kingdom': 'UK', gb: 'UK', britain: 'UK',
+    deutschland: 'Germany', prc: 'China',
+    'south korea': 'South Korea', rok: 'South Korea', 'republic of korea': 'South Korea',
+    uae: 'UAE', emirates: 'UAE', 'united arab emirates': 'UAE',
+    'saudi arabia': 'Saudi Arabia', ksa: 'Saudi Arabia',
+    'new zealand': 'New Zealand', 'czech republic': 'Czech Republic',
+    'costa rica': 'Costa Rica', 'dr congo': 'DR Congo', 'sri lanka': 'Sri Lanka',
   }
   return aliases[value.toLowerCase()] ?? value
 }
@@ -190,7 +196,7 @@ const layerLabels: Record<LayerKey, string> = {
 }
 
 const nowIso = new Date().toISOString().slice(0, 10)
-const MAX_TOPICS = 120
+const MAX_TOPICS = 300
 
 const layerData: {
   plants: BasePoint[]; storage: BasePoint[]; projects: BasePoint[]; hydrogen: BasePoint[]
@@ -388,6 +394,7 @@ function PolicyWin({ items, sectorSlug }: { items: PolicyItem[]; sectorSlug?: st
 }
 
 function YoutubeWin({ items, videos }: { items?: LinkItem[]; videos?: YoutubeVideo[] }) {
+  const [playingId, setPlayingId] = useState<string | null>(null)
   const allVideos: YoutubeVideo[] = videos && videos.length > 0 ? videos :
     (items || []).map(l => ({ title: l.title, channel: l.source || 'Energy', url: l.url, videoId: '', thumbnail: '', pubDate: l.time || '', isLive: false, description: '' }))
   if (allVideos.length === 0) return (
@@ -396,22 +403,30 @@ function YoutubeWin({ items, videos }: { items?: LinkItem[]; videos?: YoutubeVid
   return (
     <Win title="▶ MEDIA / STREAMS">
       {allVideos.map((v, i) => (
-        <div key={i} className={`tw-row tw-yt-row ${v.isLive ? 'yt-live' : ''}`}>
-          {v.thumbnail ? (
-            <a href={v.url} target="_blank" rel="noreferrer" className="yt-thumb-wrap">
-              <img src={v.thumbnail} alt="" className="yt-thumb" />
+        <div key={i} className={`tw-yt-row ${v.isLive ? 'yt-live' : ''}`}>
+          {v.videoId && playingId === v.videoId ? (
+            <div className="yt-embed-wrap">
+              <iframe
+                src={`https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0`}
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+                title={v.title}
+              />
+            </div>
+          ) : v.videoId ? (
+            <div className="yt-thumb-wrap" onClick={() => setPlayingId(v.videoId)}>
+              <img src={v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`} alt="" className="yt-thumb" />
+              <div className="yt-play-overlay">
+                <div className="yt-play-btn" />
+              </div>
               {v.isLive && <span className="yt-live-badge">LIVE</span>}
-            </a>
+            </div>
           ) : null}
           <div className="tw-yt-info">
-            <a href={v.url} target="_blank" rel="noreferrer" className="tw-yt-link">
-              <span className={`tw-prompt ${v.isLive ? 'tw-red yt-pulse' : 'tw-green'}`}>{v.isLive ? '● LIVE' : '▶'}</span>
-              <span className="tw-col-main">{v.title}</span>
-            </a>
+            <div className="tw-yt-title">{v.title}</div>
             <div className="yt-meta">
-              <span className="tw-col-src tw-cyan">{v.channel}</span>
+              <span className="tw-cyan">{v.channel}</span>
               <span className="tw-dim"> · {v.pubDate ? new Date(v.pubDate).toLocaleDateString() : ''}</span>
-              {v.description && <span className="tw-dim yt-desc"> — {v.description.slice(0, 80)}</span>}
             </div>
           </div>
         </div>

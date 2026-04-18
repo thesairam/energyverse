@@ -1,13 +1,33 @@
 /**
  * server/youtube.js
  *
- * YouTube energy channel RSS aggregator — per-sector + global.
- * Uses public YouTube RSS feeds (no API key required).
+ * YouTube Data API v3 aggregator — per-sector + global.
+ * Uses YouTube API key for channel uploads + trending search.
+ * Falls back to public RSS feeds when no API key is configured.
+ *
+ * Quota budget (10,000 units/day):
+ *   playlistItems: 1 unit/call  (~50 calls/refresh × 48 = 2,400/day)
+ *   search:       100 units/call (cached 2h, ~12 calls/day × 100 = 1,200/day)
+ *   Total: ~3,600 units/day — well within limits
  */
 
 import Parser from 'rss-parser'
 
+const API_BASE = 'https://www.googleapis.com/youtube/v3'
 const rssParser = new Parser({ timeout: 9000 })
+
+function getApiKey() {
+  return process.env.youtubeapikey || process.env.YOUTUBE_API_KEY || ''
+}
+
+function decodeHtml(str) {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
 
 // ── Global energy channels ────────────────────────────────────────────────────
 const GLOBAL_CHANNELS = [
@@ -22,7 +42,6 @@ const GLOBAL_CHANNELS = [
 ]
 
 // ── Per-sector channel mapping ────────────────────────────────────────────────
-// channel_id: best-effort IDs; graceful fail when wrong
 export const SECTOR_CHANNELS = {
   Solar: [
     { id: 'UCwyMZZT9OStWV93hdSzNPfw', name: 'LONGi Solar' },
@@ -80,6 +99,19 @@ export const SECTOR_CHANNELS = {
   ],
 }
 
+// ── Sector search queries (for trending discovery) ────────────────────────────
+const SECTOR_SEARCH_QUERIES = {
+  Solar:      'solar energy panel photovoltaic industry news',
+  Wind:       'wind energy turbine offshore wind farm news',
+  Hydro:      'hydropower hydroelectric dam energy news',
+  Geothermal: 'geothermal energy power plant news',
+  Storage:    'battery energy storage grid BESS news',
+  Nuclear:    'nuclear power reactor SMR energy news',
+  EV:         'electric vehicle EV charging industry news',
+  Hydrogen:   'green hydrogen electrolyzer fuel cell news',
+}
+const GLOBAL_SEARCH_QUERY = 'energy transition renewable clean power news'
+
 // ── Per-sector static fallbacks ───────────────────────────────────────────────
 const mkFallback = (title, channel, url, desc) => ({
   title, channel, url, videoId: '', thumbnail: '', pubDate: new Date().toISOString(), isLive: false, description: desc,
@@ -95,7 +127,7 @@ export const SECTOR_FALLBACK_VIDEOS = {
   Wind: [
     mkFallback('Global Wind Report 2026 – GWEC Launch', 'GWEC', 'https://www.youtube.com/@gwecglobal', 'Annual global wind market statistics.'),
     mkFallback('Offshore Wind Finance Summit Recap', 'BloombergNEF', 'https://www.youtube.com/@BloombergNEF', 'BNEF offshore wind financing panel.'),
-    mkFallback('Vestas V236-15MW Turbine Deployment', 'Vestas', 'https://www.youtube.com/@vestas', 'World\'s largest serial-produced offshore turbine.'),
+    mkFallback('Vestas V236-15MW Turbine Deployment', 'Vestas', 'https://www.youtube.com/@vestas', "World's largest serial-produced offshore turbine."),
     mkFallback('WindEurope Annual Statistics 2026', 'WindEurope', 'https://www.youtube.com/@windeurope', 'European wind market capacity figures.'),
   ],
   Hydro: [
@@ -106,13 +138,13 @@ export const SECTOR_FALLBACK_VIDEOS = {
   Geothermal: [
     mkFallback('Geothermal Rising Forum 2026 Highlights', 'Geothermal Rising', 'https://www.youtube.com/@geothermalrising', 'Key sessions from GRF 2026.'),
     mkFallback('Enhanced Geothermal Systems – Next Frontier', 'ThinkGeoEnergy', 'https://www.youtube.com/@thinkgeoenergy', 'EGS technology deep-dive.'),
-    mkFallback('Iceland\'s Geothermal District Heating', 'IRENA', 'https://www.youtube.com/@IRENAchannel', 'IRENA case study on Icelandic geothermal.'),
+    mkFallback('Iceland Geothermal District Heating', 'IRENA', 'https://www.youtube.com/@IRENAchannel', 'IRENA case study on Icelandic geothermal.'),
   ],
   Storage: [
     mkFallback('CATL Condensed Battery Tech Briefing', 'CATL', 'https://www.youtube.com/@CATL_Official', 'Next-gen condensed matter cell launch.'),
     mkFallback('Grid-Scale Battery Storage – 2 TW by 2030?', 'BloombergNEF', 'https://www.youtube.com/@BloombergNEF', 'BNEF storage deployment forecast.'),
     mkFallback('Long-Duration Energy Storage Roundtable', 'Rocky Mountain Institute', 'https://www.youtube.com/@RockyMountainInstitute', 'LDES technology pathways panel.'),
-    mkFallback('Tesla Megapack Deployment – Hornsdale Update', 'Canary Media', 'https://www.youtube.com/@canarymedia', 'World\'s largest battery operations report.'),
+    mkFallback('Tesla Megapack Deployment – Hornsdale Update', 'Canary Media', 'https://www.youtube.com/@canarymedia', "World's largest battery operations report."),
   ],
   Nuclear: [
     mkFallback('IAEA World Nuclear Performance Report 2026', 'IAEA', 'https://www.youtube.com/@iaeaorg', 'Annual nuclear fleet performance statistics.'),
@@ -134,7 +166,6 @@ export const SECTOR_FALLBACK_VIDEOS = {
   ],
 }
 
-// ── Global fallback ───────────────────────────────────────────────────────────
 const GLOBAL_FALLBACK = [
   mkFallback('World Energy Outlook 2025 – IEA Launch', 'IEA', 'https://www.youtube.com/@IEAenergy', 'IEA flagship World Energy Outlook launch.'),
   mkFallback('Renewable Energy Statistics 2026 – IRENA', 'IRENA', 'https://www.youtube.com/@IRENAchannel', 'IRENA capacity statistics launch webinar.'),
@@ -144,7 +175,88 @@ const GLOBAL_FALLBACK = [
   mkFallback('Green Hydrogen – 2030 Cost Targets', 'Rocky Mountain Institute', 'https://www.youtube.com/@RockyMountainInstitute', 'RMI H2 cost reduction pathways.'),
 ]
 
-// ── RSS helpers ───────────────────────────────────────────────────────────────
+// ── YouTube Data API v3 helpers ───────────────────────────────────────────────
+
+/** Convert channel ID (UC…) → uploads playlist ID (UU…) */
+function uploadsPlaylistId(channelId) {
+  return channelId.startsWith('UC') ? 'UU' + channelId.slice(2) : channelId
+}
+
+/** Fetch latest uploads from a channel via playlistItems (1 quota unit) */
+async function apiFetchChannel(channel, limit = 5) {
+  const key = getApiKey()
+  const playlistId = uploadsPlaylistId(channel.id)
+  const params = new URLSearchParams({
+    part: 'snippet',
+    playlistId,
+    maxResults: String(limit),
+    key,
+  })
+  const res = await fetch(`${API_BASE}/playlistItems?${params}`, {
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const data = await res.json()
+
+  return (data.items || []).map(item => {
+    const s = item.snippet || {}
+    const videoId = s.resourceId?.videoId || ''
+    const title = decodeHtml((s.title || '').trim())
+    return {
+      title,
+      channel: channel.name,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      videoId,
+      thumbnail: s.thumbnails?.medium?.url || s.thumbnails?.default?.url ||
+                 (videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : ''),
+      pubDate: s.publishedAt || new Date().toISOString(),
+      isLive: /\b(live|streaming|premiere)\b/i.test(title),
+      description: decodeHtml((s.description || '').slice(0, 160)),
+    }
+  })
+}
+
+/** Search YouTube for videos (100 quota units — results cached 2h) */
+const searchCache = new Map()
+const SEARCH_TTL = 2 * 60 * 60 * 1000
+
+async function apiSearch(query, maxResults = 8) {
+  const key = getApiKey()
+  const cached = searchCache.get(query)
+  if (cached && Date.now() - cached.ts < SEARCH_TTL) return cached.data
+
+  const params = new URLSearchParams({
+    part: 'snippet',
+    q: query,
+    type: 'video',
+    order: 'date',
+    maxResults: String(maxResults),
+    relevanceLanguage: 'en',
+    publishedAfter: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    key,
+  })
+  const res = await fetch(`${API_BASE}/search?${params}`, {
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) return cached?.data || []
+  const data = await res.json()
+
+  const videos = (data.items || []).map(item => ({
+    title: decodeHtml(item.snippet?.title || ''),
+    channel: decodeHtml(item.snippet?.channelTitle || ''),
+    url: `https://www.youtube.com/watch?v=${item.id?.videoId}`,
+    videoId: item.id?.videoId || '',
+    thumbnail: item.snippet?.thumbnails?.medium?.url || '',
+    pubDate: item.snippet?.publishedAt || new Date().toISOString(),
+    isLive: item.snippet?.liveBroadcastContent === 'live',
+    description: decodeHtml((item.snippet?.description || '').slice(0, 160)),
+  }))
+
+  searchCache.set(query, { ts: Date.now(), data: videos })
+  return videos
+}
+
+// ── RSS fallback ──────────────────────────────────────────────────────────────
 const channelRssUrl = (channelId) =>
   `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
 
@@ -166,7 +278,7 @@ function parseEntry(item, channelName) {
   }
 }
 
-async function fetchChannel(channel, limit = 5) {
+async function rssFetchChannel(channel, limit = 5) {
   try {
     const feed = await rssParser.parseURL(channelRssUrl(channel.id))
     return (feed?.items || []).slice(0, limit).map((item) => parseEntry(item, channel.name))
@@ -175,6 +287,20 @@ async function fetchChannel(channel, limit = 5) {
   }
 }
 
+// ── Unified channel fetch — API preferred, RSS fallback ───────────────────────
+
+async function fetchChannel(channel, limit = 5) {
+  if (getApiKey()) {
+    try {
+      return await apiFetchChannel(channel, limit)
+    } catch (err) {
+      console.warn(`[youtube] API failed for ${channel.name}: ${err.message}, falling back to RSS`)
+    }
+  }
+  return rssFetchChannel(channel, limit)
+}
+
+// ── Dedup + sort ──────────────────────────────────────────────────────────────
 function dedup(videos) {
   const seen = new Set()
   return videos.filter(v => {
@@ -186,18 +312,49 @@ function dedup(videos) {
 }
 
 // ── Public exports ────────────────────────────────────────────────────────────
+
 export async function fetchYoutube(perChannel = 4) {
-  const results = await Promise.allSettled(GLOBAL_CHANNELS.map(ch => fetchChannel(ch, perChannel)))
-  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
-  const sorted = dedup(all)
-  return sorted.length > 0 ? sorted.slice(0, 30) : GLOBAL_FALLBACK
+  const useApi = !!getApiKey()
+  if (useApi) console.log('[youtube] Using YouTube Data API v3')
+  else console.log('[youtube] No API key — using RSS feeds')
+
+  // Channel uploads
+  const channelResults = await Promise.allSettled(
+    GLOBAL_CHANNELS.map(ch => fetchChannel(ch, perChannel))
+  )
+  const channelVideos = channelResults.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+
+  // Trending search (API only, cached 2h)
+  let searchVideos = []
+  if (useApi) {
+    try {
+      searchVideos = await apiSearch(GLOBAL_SEARCH_QUERY, 10)
+    } catch { /* non-critical */ }
+  }
+
+  const all = dedup([...channelVideos, ...searchVideos])
+  return all.length > 0 ? all.slice(0, 30) : GLOBAL_FALLBACK
 }
 
 export async function fetchYoutubeForSector(sector, perChannel = 4) {
+  const useApi = !!getApiKey()
   const channels = SECTOR_CHANNELS[sector] || GLOBAL_CHANNELS.slice(0, 3)
-  const results = await Promise.allSettled(channels.map(ch => fetchChannel(ch, perChannel)))
-  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : [])
-  const sorted = dedup(all)
+
+  // Channel uploads
+  const channelResults = await Promise.allSettled(
+    channels.map(ch => fetchChannel(ch, perChannel))
+  )
+  const channelVideos = channelResults.flatMap(r => r.status === 'fulfilled' ? r.value : [])
+
+  // Sector search (API only, cached 2h)
+  let searchVideos = []
+  if (useApi && SECTOR_SEARCH_QUERIES[sector]) {
+    try {
+      searchVideos = await apiSearch(SECTOR_SEARCH_QUERIES[sector], 8)
+    } catch { /* non-critical */ }
+  }
+
+  const all = dedup([...channelVideos, ...searchVideos])
   const fallback = SECTOR_FALLBACK_VIDEOS[sector] || GLOBAL_FALLBACK
-  return sorted.length > 0 ? sorted.slice(0, 20) : fallback
+  return all.length > 0 ? all.slice(0, 20) : fallback
 }

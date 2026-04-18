@@ -3,11 +3,15 @@
  * Express 5 + ws API server for Energyverse
  * — Staggered per-sector RSS cron (v2 pattern)
  * — WebSocket live-push for sector, news and geo updates
- * — /api/youtube  — RSS-aggregated energy YouTube videos/streams
+ * — /api/youtube  — YouTube Data API v3 energy videos/streams
  * — /api/geo/all  — all geo layers as GeoJSON FeatureCollections
  * — /api/geo/:layer  — single layer GeoJSON
  * — /api/dashboard, /api/sector/:slug, /api/health, etc.
  */
+
+import dotenv from 'dotenv'
+dotenv.config()                // backend/.env
+dotenv.config({ path: '../.env' }) // project root .env
 
 import express from 'express'
 import { createServer } from 'node:http'
