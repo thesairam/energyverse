@@ -20,7 +20,7 @@
   --kpi-h:    40px;
   --tab-h:    36px;
   --tick-h:   22px;
-  --dash-h:   540px;
+  --dash-h:   675px;
 }
 
 /* ── Reset ───────────────────────────────────────────────────────────────── */
@@ -297,7 +297,7 @@ body::after {
 .sector-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: 220px;
+  grid-auto-rows: 275px;
   gap: 4px;
   min-height: 0;
 }
@@ -387,7 +387,7 @@ body::after {
 .t-map-panel {
   flex: 0 0 auto;
   width: 100%;
-  height: 400px;
+  height: 500px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -450,9 +450,13 @@ body::after {
 }
 .market-panel-inner > .tw {
   border-top: none;
-  flex: 0 0 200px;
+  flex: 1 0 0;
+  min-width: 0;
   max-height: none;
   border-right: 1px solid var(--border);
+}
+.market-panel-inner > .tw:last-child {
+  border-right: none;
 }
 
 /* Map view (kept for legacy/fallback) */

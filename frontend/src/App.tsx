@@ -22,7 +22,7 @@ type ChatMessage = { role: 'user' | 'assistant'; content: string }
 type YoutubeVideo = { title: string; channel: string; url: string; videoId: string; thumbnail: string; pubDate: string; isLive: boolean; description: string }
 type ApiGeoFC = { type: 'FeatureCollection'; features: any[]; layer?: string }
 type ApiGeoLayers = Partial<Record<string, ApiGeoFC>>
-type ActiveTab = SectorIntel['slug'] | 'CHAT'
+type ActiveTab = SectorIntel['slug'] | 'CHAT' | 'ALL'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Country + Region data — full global coverage
@@ -461,6 +461,61 @@ function SectorView({ sector, allPolicies, sectorVideos }: { sector: SectorIntel
   )
 }
 
+// ALL sectors combined view — merges all sectors news sorted by time
+function AllSectorsView({ sectors, allPolicies }: { sectors: SectorIntel[]; allPolicies: PolicyItem[] }) {
+  const tagItem = (items: LinkItem[], slug: string) => items.map(n => ({ ...n, _sector: slug }))
+  const allLatest = sectors.flatMap(s => tagItem(s.latestNews || [], s.slug))
+    .sort((a, b) => (b.time || '').localeCompare(a.time || ''))
+  const allTech = sectors.flatMap(s => tagItem(s.techNews || [], s.slug))
+    .sort((a, b) => (b.time || '').localeCompare(a.time || ''))
+  const allFinance = sectors.flatMap(s => s.finance || [])
+  const allCommunity = sectors.flatMap(s => s.community || [])
+  const allProducts = sectors.flatMap(s => (s.products || []).map(p => ({ ...p, _sector: s.slug })))
+  const allStartups = sectors.flatMap(s => (s.startups || []).map(st => ({ ...st, _sector: s.slug })))
+
+  return (
+    <div className="sector-view">
+      <div className="sector-banner">
+        <span className="sector-slug" style={{ color: 'var(--green)' }}>[ALL SECTORS]</span>
+        <span className="sector-headline">Global Energy Intelligence — All Sectors Combined</span>
+      </div>
+      <div className="sector-grid">
+        <Win title="LATEST NEWS — ALL">
+          {allLatest.slice(0, 30).map((n: any, i: number) => (
+            <div key={i} className="tw-row">
+              <span className="tw-tag" style={{ color: sectorColors[n._sector as keyof typeof sectorColors] || 'var(--amber)' }}>[{n._sector}]</span>
+              <a href={n.url} target="_blank" rel="noreferrer" className="tw-col-main tw-link">{n.title}</a>
+              <span className="tw-col-time tw-dim">{n.time}</span>
+            </div>
+          ))}
+        </Win>
+        <Win title="TECH NEWS — ALL">
+          {allTech.slice(0, 20).map((n: any, i: number) => (
+            <div key={i} className="tw-row">
+              <span className="tw-tag" style={{ color: sectorColors[n._sector as keyof typeof sectorColors] || 'var(--amber)' }}>[{n._sector}]</span>
+              <a href={n.url} target="_blank" rel="noreferrer" className="tw-col-main tw-link">{n.title}</a>
+              <span className="tw-col-time tw-dim">{n.time}</span>
+            </div>
+          ))}
+        </Win>
+        <ProductsWin items={allProducts.slice(0, 12)} />
+        <CommunityWin items={allCommunity.slice(0, 12)} />
+        <FinanceWin items={allFinance} />
+        <StartupsWin items={allStartups.slice(0, 12)} />
+        <PolicyWin items={allPolicies} sectorSlug="" />
+        <Win title="SECTOR HEADLINES">
+          {sectors.map((s, i) => (
+            <div key={i} className="tw-row">
+              <span className="tw-tag" style={{ color: sectorColors[s.slug] }}>[{s.slug}]</span>
+              <span className="tw-col-main">{s.headline}</span>
+            </div>
+          ))}
+        </Win>
+      </div>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Market View — rendered as right panel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -617,7 +672,7 @@ function App() {
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<string | null>(null)
   const [liveNewsTape, setLiveNewsTape] = useState<NewsItem[]>(newsTape)
   const [liveSectorIntel, setLiveSectorIntel] = useState<SectorIntel[]>(sectorIntel)
-  const [activeTab, setActiveTab] = useState<ActiveTab>('Solar')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('ALL')
   const [activeRegion, setActiveRegion] = useState<string>('Global')
   const [activeCountry, setActiveCountry] = useState<string>('All')
   const [mapSectorFilter, setMapSectorFilter] = useState<SectorIntel['slug'] | null>(null)
@@ -1044,7 +1099,7 @@ function App() {
           </div>
           <div className="map-sector-filter-row">
             <span className="tw-dim map-filter-label">SECTOR</span>
-            <button className={`t-tab t-tab-sm ${!mapSectorFilter && activeTab !== 'CHAT' ? 'active' : ''}`} onClick={() => { setMapSectorFilter(null); if (activeTab === 'CHAT') setActiveTab('Solar') }}>ALL</button>
+            <button className={`t-tab t-tab-sm ${activeTab === 'ALL' ? 'active' : ''}`} onClick={() => { setMapSectorFilter(null); setActiveTab('ALL') }}>ALL</button>
             {orderedSectors.map(s => (
               <button key={s.slug} className={`t-tab t-tab-sm ${mapSectorFilter === s.slug ? 'active' : ''}`}
                 style={mapSectorBtnStyle(s.slug)} onClick={() => { setMapSectorFilter(mapSectorFilter === s.slug ? null : s.slug); setActiveTab(s.slug as ActiveTab) }}>
@@ -1077,7 +1132,10 @@ function App() {
 
       {/* ── Sector + Chat content ── */}
       <main className="t-main">
-        {activeSectorData && activeTab !== 'CHAT' && (
+        {activeTab === 'ALL' && (
+          <AllSectorsView sectors={orderedSectors} allPolicies={policies} />
+        )}
+        {activeSectorData && activeTab !== 'CHAT' && activeTab !== 'ALL' && (
           <SectorView sector={activeSectorData} allPolicies={policies} sectorVideos={currentSectorVideos} />
         )}
         {activeTab === 'CHAT' && (

@@ -240,3 +240,7 @@ score = recency × 0.45 + sourceRank × 0.30 + engagement × 0.25 + keywordBoost
 - **40+ stock tickers** tracked (5 per sector)
 - **48+ YouTube channels** (8 global + 5 per sector)
 - **Automatic refresh** every 5–15 minutes per sector
+
+IMPORTANT!
+
+If I am asking to fix a bug or append a feature, ensure to work only that specific task and never break/build anything else or soemthing that affects other features. 
